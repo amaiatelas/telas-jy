@@ -1,0 +1,22 @@
+# Claves y datos secretos: nunca se suben
+.env
+.env.*
+*.pem
+*.key
+
+# Carpetas que se generan solas
+node_modules/
+.netlify/
+
+# Configuración personal de Claude Code en este equipo
+.claude/
+
+# Basura del sistema y de los editores
+.DS_Store
+Thumbs.db
+desktop.ini
+*.log
+*.tmp
+*.swp
+.vscode/
+.idea/
