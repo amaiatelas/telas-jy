@@ -452,6 +452,20 @@ drop trigger if exists t_pedidos_actualizar on public.pedidos;
 create trigger t_pedidos_actualizar before update on public.pedidos
   for each row execute function public.pedidos_antes_actualizar();
 
+-- Eliminar pedido: solo el dueño (política de abajo) y solo si no tiene pagos registrados.
+-- Los pagos nunca se borran (ni siquiera los anulados): un pedido con pagos se cancela, no se elimina.
+create or replace function public.pedidos_antes_borrar()
+returns trigger language plpgsql as $$
+begin
+  if exists (select 1 from public.pagos where pedido_id = old.id) then
+    raise exception 'Este pedido tiene pagos registrados. Cancélalo en lugar de eliminarlo';
+  end if;
+  return old;
+end $$;
+drop trigger if exists t_pedidos_borrar on public.pedidos;
+create trigger t_pedidos_borrar before delete on public.pedidos
+  for each row execute function public.pedidos_antes_borrar();
+
 -- Corte nuevo: el recargo de doble forro lo fija el servidor. La vendedora solo puede
 -- agregar cortes mientras se crea el pedido (nunca a un pedido que ya existe).
 create or replace function public.items_antes_insertar()
@@ -650,6 +664,9 @@ create policy pedidos_agregar on public.pedidos for insert to authenticated
 drop policy if exists pedidos_editar on public.pedidos;
 create policy pedidos_editar on public.pedidos for update to authenticated
   using (public.puede_operar()) with check (public.puede_operar());
+drop policy if exists pedidos_borrar on public.pedidos;
+create policy pedidos_borrar on public.pedidos for delete to authenticated
+  using (public.es_dueno());
 
 -- cortes
 drop policy if exists items_ver on public.pedido_items;
@@ -688,6 +705,7 @@ create policy retiros_agregar on public.retiros for insert to authenticated
 revoke all on all tables in schema public from anon;
 grant usage on schema public to authenticated;
 grant select, insert, update on all tables in schema public to authenticated;
+grant delete on public.pedidos to authenticated;
 grant usage, select on all sequences in schema public to authenticated;
 
 revoke all on function public.es_dueno()           from public, anon;

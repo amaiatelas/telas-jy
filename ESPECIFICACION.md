@@ -84,6 +84,11 @@ Solo dos cuentas: dueño y vendedora. Sin registro público.
 - Avance de cortes como "Cortes X de Y". Al terminar todos, aviso "¿Marcar como listo?". [HECHO]
 - Saldo pendiente siempre muy visible en rojo ("Debe X Bs"), también en pedidos entregados. [HECHO]
 
+## Eliminar pedidos
+- Solo el dueño ve el botón "Eliminar pedido" (al final del detalle) y la base de datos también lo exige.
+- Pide confirmación y borra el pedido con sus cortes. No se puede deshacer. [HECHO]
+- Un pedido con pagos registrados (aunque estén anulados) NO se elimina: se cancela. Así los pagos nunca se pierden. [HECHO]
+
 ## Pagos
 
 - Parciales o "completar pago". Método: efectivo, QR o mixto. Montos en Bs enteros. [HECHO]
