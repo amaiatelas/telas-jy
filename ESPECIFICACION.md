@@ -9,6 +9,9 @@ Solo dos cuentas: dueño y vendedora. Sin registro público.
 
 - Ambos: crear pedidos, registrar pagos, marcar cortes como hechos, cambiar el estado del pedido
   (menos cancelar), descargar el PDF de un pedido, ver pedidos, cortes y saldos. [HECHO]
+- Ambos: completar o corregir los datos de envío (nombre, celular, ciudad y trópico) de un pedido
+  de envío que no esté cancelado. Es lo único del pedido, además del estado, que la vendedora
+  puede cambiar; lo aplica la base de datos. [HECHO]
 - Solo dueño: agregar diseños, verificar y anular pagos, cancelar pedidos, cambiar recargos
   (70 Bs de doble forro, 20 Bs de trópico), ver el historial completo, registrar retiros de
   efectivo, descargar PDF de reportes, administrar la cuenta y el horario de la vendedora,
@@ -30,13 +33,18 @@ Solo dos cuentas: dueño y vendedora. Sin registro público.
 
 ## Nuevo pedido
 
-- Celular y nombre del cliente; si el celular ya existe se completa el nombre. [HECHO]
+- Cliente: solo el celular es obligatorio; no hay campo de nombre. Si el celular ya tiene
+  pedidos, aviso discreto "Cliente con 3 pedidos anteriores" (o "con 1 pedido anterior"), sin
+  autocompletar nada. El celular se normaliza al guardar: sin espacios, guiones, paréntesis ni
+  "+", y sin el 591 inicial si el número tiene 11 dígitos (+591 7123 4567 queda 71234567). Se
+  hace en la pantalla y en `crear_pedido`. Los datos viejos no se tocan. [HECHO]
 - Varios cortes por pedido, de distintos diseños (y varios del mismo). Cada corte: diseño de una
   lista, medida en cm, costo por metro. [HECHO]
 - Doble forro opcional por corte: +70 Bs y color obligatorio. [HECHO]
 - Subtotal de cada corte redondeado hacia arriba a Bs enteros (10,2 → 11; 0,6 → 1). [HECHO]
 - Entrega: retiro en tienda o envío. Envío (a cualquier destino): nombre completo, celular y
-  ciudad; si es para trópico se suman 20 Bs. Nada más (sin departamento, transporte ni guía). [HECHO]
+  ciudad, los tres OPCIONALES al crear el pedido ("Puedes completarlos después"); si es para
+  trópico se suman 20 Bs. Nada más (sin departamento, transporte ni guía). [HECHO]
 - Fecha de entrega (por defecto, 2 días después). [HECHO]
 - Medida (cm) y costo por metro aceptan coma o punto (80,5 u 80.5), con máximo 2 decimales;
   si hay más, mensaje rojo "Usa máximo 2 decimales". Lo que se calcula en pantalla y lo que se
@@ -49,6 +57,26 @@ Solo dos cuentas: dueño y vendedora. Sin registro público.
   `pago_qr`), todo en una sola operación: si algo falla no se crea ni el pedido ni el pago.
   El pago nace sin verificar y la base pone la fecha y el autor. [HECHO]
 - Solo el dueño agrega diseños a la lista; la vendedora solo elige. [HECHO]
+
+## Datos de envío después de crear el pedido (ambos)
+
+- En el detalle de un pedido de envío hay una sección "Datos de envío" con un formulario
+  (nombre completo, celular, ciudad y casilla de trópico) y el botón "Guardar datos de envío".
+  Al guardar se recargan los datos, así el total y el saldo se actualizan. Un pedido cancelado
+  no se puede editar. [HECHO]
+- Si falta el nombre, el celular o la ciudad: aviso ámbar "Datos de envío pendientes" arriba del
+  formulario y etiqueta ámbar con el mismo texto en la fila del pedido en la lista de Pedidos. [HECHO]
+- El costo de envío NO lo manda la pantalla: al cambiar el trópico lo recalcula la base de datos
+  con el valor actual de Ajustes. Cambiar el costo sin cambiar el trópico se rechaza. Si el nuevo
+  total quedara menor que lo ya pagado (pagos no anulados), se rechaza con un mensaje claro. [HECHO]
+
+## Pedidos sin nombre
+
+- Donde antes salía el nombre del cliente (lista de Pedidos, detalle, Cortes, Historial, Saldos y
+  PDF) se muestra el celular como título cuando no hay nombre. Los pedidos viejos conservan el suyo.
+- Saldos agrupa por celular (normalizado). El PDF del pedido omite la fila "Nombre" si no hay, y el
+  mensaje de WhatsApp empieza "Hola, este es el resumen de tu pedido…" sin nombre.
+- El buscador de Pedidos ignora espacios y guiones al comparar celulares. [HECHO]
 
 ## Estados y saldo
 

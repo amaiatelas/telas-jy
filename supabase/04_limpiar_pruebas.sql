@@ -8,9 +8,12 @@
 --   PASO 3. Corre la consulta del PASO 3 para comprobar cuánto quedó.
 --   PASO 4. Es opcional y peligroso: lee la advertencia antes de tocarlo.
 --
--- Qué se considera "de prueba": un cliente cuyo nombre EMPIEZA con PRUEBA, en mayúsculas
--- (por ejemplo "PRUEBA Adelanto"). Si escribiste "Prueba" con minúsculas, cambia la palabra
--- "like" por "ilike" en todas las consultas (ilike no distingue mayúsculas de minúsculas).
+-- Qué se considera "de prueba" (cualquiera de las dos reglas):
+--   a) el nombre del cliente EMPIEZA con PRUEBA, en mayúsculas (por ejemplo "PRUEBA Adelanto");
+--   b) el celular EMPIEZA con 7000000 (por ejemplo 70000001, 70000002...).
+-- Los pedidos nuevos ya no llevan nombre, por eso la regla del celular es la principal.
+-- Si escribiste "Prueba" con minúsculas, cambia la palabra "like" por "ilike" en las consultas
+-- (ilike no distingue mayúsculas de minúsculas).
 -- =====================================================================
 
 
@@ -22,7 +25,7 @@
 --     "pagos" cuenta todos (también los anulados). "pagado" suma solo los que no están anulados.
 select
   p.numero,
-  p.cliente_nombre as cliente,
+  coalesce(p.cliente_nombre, '(sin nombre)') as cliente,
   p.cliente_celular as celular,
   p.estado,
   (select coalesce(sum(i.subtotal), 0) from public.pedido_items i where i.pedido_id = p.id)
@@ -31,23 +34,24 @@ select
   (select coalesce(sum(g.efectivo + g.qr), 0) from public.pagos g
     where g.pedido_id = p.id and not g.anulado) as pagado
 from public.pedidos p
-where p.cliente_nombre like 'PRUEBA%'
+where coalesce(p.cliente_nombre, '') like 'PRUEBA%' or p.cliente_celular like '7000000%'
 order by p.numero;
 
 -- 1b) Clientes de prueba que se borrarían (solo los que no tengan ningún otro pedido).
-select c.celular, c.nombre
+select c.celular, coalesce(c.nombre, '(sin nombre)') as nombre
 from public.clientes c
-where c.nombre like 'PRUEBA%'
+where (coalesce(c.nombre, '') like 'PRUEBA%' or c.celular like '7000000%')
   and not exists (
     select 1 from public.pedidos p
-    where p.cliente_celular = c.celular and p.cliente_nombre not like 'PRUEBA%'
+    where p.cliente_celular = c.celular
+      and not (coalesce(p.cliente_nombre, '') like 'PRUEBA%' or p.cliente_celular like '7000000%')
   )
-order by c.nombre;
+order by c.celular;
 
 -- 1c) Control: cuántos pedidos NO son de prueba. Estos no se tocan.
 select count(*) as pedidos_que_no_se_tocan
 from public.pedidos
-where cliente_nombre not like 'PRUEBA%';
+where not (coalesce(cliente_nombre, '') like 'PRUEBA%' or cliente_celular like '7000000%');
 
 
 -- ---------------------------------------------------------------------
@@ -60,10 +64,10 @@ where cliente_nombre not like 'PRUEBA%';
 -- ---------------------------------------------------------------------
 
 -- delete from public.pedidos
--- where cliente_nombre like 'PRUEBA%';
+-- where coalesce(cliente_nombre, '') like 'PRUEBA%' or cliente_celular like '7000000%';
 
 -- delete from public.clientes c
--- where c.nombre like 'PRUEBA%'
+-- where (coalesce(c.nombre, '') like 'PRUEBA%' or c.celular like '7000000%')
 --   and not exists (select 1 from public.pedidos p where p.cliente_celular = c.celular);
 
 

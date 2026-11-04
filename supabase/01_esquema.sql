@@ -69,7 +69,7 @@ create unique index if not exists disenos_nombre_unico on public.disenos (lower(
 -- Clientes (para autocompletar el nombre por el celular)
 create table if not exists public.clientes (
   celular text primary key,
-  nombre text not null,
+  nombre text,
   creado_en timestamptz not null default now()
 );
 
@@ -78,7 +78,7 @@ create table if not exists public.pedidos (
   id uuid primary key default gen_random_uuid(),
   numero integer generated always as identity,
   cliente_celular text not null references public.clientes(celular),
-  cliente_nombre text not null,
+  cliente_nombre text,
   tipo_entrega text not null check (tipo_entrega in ('retiro','envio')),
   envio_nombre text,
   envio_celular text,
@@ -90,9 +90,7 @@ create table if not exists public.pedidos (
   estado text not null default 'en_proceso'
     check (estado in ('en_proceso','listo','entregado','cancelado')),
   creado_por uuid default auth.uid(),
-  creado_en timestamptz not null default now(),
-  check (tipo_entrega = 'retiro'
-         or (envio_nombre is not null and envio_celular is not null and envio_ciudad is not null))
+  creado_en timestamptz not null default now()
 );
 create unique index if not exists pedidos_numero_unico on public.pedidos (numero);
 
@@ -144,6 +142,30 @@ create table if not exists public.retiros (
   creado_por uuid default auth.uid(),
   creado_en timestamptz not null default now()
 );
+
+-- ---------------------------------------------------------------------
+-- 1b. AJUSTES A TABLAS YA CREADAS (para bases que tenían la versión anterior)
+-- ---------------------------------------------------------------------
+
+-- El nombre del cliente es opcional (los datos pueden llegar después)
+alter table public.clientes alter column nombre drop not null;
+alter table public.pedidos  alter column cliente_nombre drop not null;
+
+-- Nombre, celular y ciudad del envío son opcionales al crear el pedido. La restricción que
+-- los exigía tenía un nombre automático: se busca por su definición y se borra si existe.
+-- Si ya no existe, no pasa nada.
+do $$
+declare r record;
+begin
+  for r in
+    select conname from pg_constraint
+    where conrelid = 'public.pedidos'::regclass
+      and contype = 'c'
+      and pg_get_constraintdef(oid) ilike '%envio_nombre is not null%'
+  loop
+    execute format('alter table public.pedidos drop constraint %I', r.conname);
+  end loop;
+end $$;
 
 -- ---------------------------------------------------------------------
 -- 2. FUNCIONES DE PERMISOS Y HORARIO
@@ -237,6 +259,9 @@ begin
 end $$;
 
 -- Crea un pedido completo (cliente + pedido + cortes + adelanto opcional) en un solo paso.
+-- Solo el celular y al menos un corte son obligatorios; el nombre y los datos de envío son
+-- opcionales. El celular se normaliza: sin espacios, guiones, paréntesis ni "+", y sin el 591
+-- inicial cuando el número tiene 11 dígitos (+591 7123 4567 queda como 71234567).
 -- El adelanto llega en pago_efectivo y pago_qr (Bs enteros, opcionales). Si es mayor que 0
 -- se guarda como un pago del pedido; el trigger de pagos aplica las reglas de siempre
 -- (no supera el saldo, nace sin verificar, fecha y autor los pone la base de datos).
@@ -248,13 +273,18 @@ declare
   v_num integer;
   it jsonb;
   i smallint := 0;
-  v_cel text := trim(p->>'celular');
-  v_nom text := trim(p->>'nombre');
+  v_cel text;
+  v_nom text;
   v_ef integer := 0;
   v_qr integer := 0;
 begin
-  if coalesce(v_cel, '') = '' or coalesce(v_nom, '') = '' then
-    raise exception 'Faltan los datos del cliente';
+  v_cel := regexp_replace(coalesce(p->>'celular', ''), '[[:space:]()+-]', '', 'g');
+  if v_cel ~ '^591[0-9]{8}$' then
+    v_cel := substr(v_cel, 4);
+  end if;
+  v_nom := nullif(trim(coalesce(p->>'nombre', '')), '');
+  if v_cel = '' then
+    raise exception 'Falta el celular del cliente';
   end if;
   if jsonb_array_length(coalesce(p->'items', '[]'::jsonb)) = 0 then
     raise exception 'El pedido necesita al menos un corte';
@@ -267,7 +297,7 @@ begin
   v_qr := coalesce(p->>'pago_qr', '0')::integer;
 
   insert into public.clientes (celular, nombre) values (v_cel, v_nom)
-  on conflict (celular) do update set nombre = excluded.nombre;
+  on conflict (celular) do update set nombre = coalesce(excluded.nombre, clientes.nombre);
 
   insert into public.pedidos (
     cliente_celular, cliente_nombre, tipo_entrega,
@@ -345,13 +375,20 @@ drop trigger if exists t_pedidos_insertar on public.pedidos;
 create trigger t_pedidos_insertar before insert on public.pedidos
   for each row execute function public.pedidos_antes_insertar();
 
--- Pedido: la vendedora solo puede cambiar el estado (y nunca cancelar)
+-- Pedido: la vendedora solo puede cambiar el estado (nunca cancelar) y los datos de envío.
+-- Todo lo demás es solo del dueño. El costo de envío siempre lo calcula el servidor.
 create or replace function public.pedidos_antes_actualizar()
 returns trigger language plpgsql as $$
+declare
+  v_total integer;
+  v_pagado integer;
 begin
   if not public.es_dueno() then
-    if (to_jsonb(new) - array['estado','fecha_entregado'])
-       is distinct from (to_jsonb(old) - array['estado','fecha_entregado']) then
+    if (to_jsonb(new) - array['estado','fecha_entregado','envio_nombre','envio_celular',
+                              'envio_ciudad','envio_tropico','costo_envio'])
+       is distinct from
+       (to_jsonb(old) - array['estado','fecha_entregado','envio_nombre','envio_celular',
+                              'envio_ciudad','envio_tropico','costo_envio']) then
       raise exception 'Solo el dueño puede cambiar los datos del pedido';
     end if;
     if new.estado = 'cancelado' and old.estado <> 'cancelado' then
@@ -361,6 +398,44 @@ begin
       raise exception 'Solo el dueño puede reabrir un pedido cancelado';
     end if;
   end if;
+
+  -- Datos de envío: un texto vacío cuenta como "sin dato"
+  new.envio_nombre  := nullif(trim(new.envio_nombre), '');
+  new.envio_celular := nullif(trim(new.envio_celular), '');
+  new.envio_ciudad  := nullif(trim(new.envio_ciudad), '');
+
+  -- Solo se pueden cambiar en un pedido de envío que no esté cancelado (dueño y vendedora)
+  if (new.envio_nombre, new.envio_celular, new.envio_ciudad, new.envio_tropico)
+     is distinct from
+     (old.envio_nombre, old.envio_celular, old.envio_ciudad, old.envio_tropico)
+     and (old.tipo_entrega <> 'envio' or old.estado = 'cancelado') then
+    raise exception 'Los datos de envío solo se pueden cambiar en un pedido de envío que no esté cancelado';
+  end if;
+
+  -- El costo de envío lo fija el servidor: al cambiar el trópico se recalcula con los
+  -- ajustes actuales, y cualquier otro cambio manual del costo se rechaza
+  if new.envio_tropico is distinct from old.envio_tropico then
+    if new.tipo_entrega = 'envio' and new.envio_tropico then
+      new.costo_envio := coalesce((select envio_tropico from public.ajustes where id = 1), 20);
+    else
+      new.costo_envio := 0;
+    end if;
+  elsif new.costo_envio is distinct from old.costo_envio then
+    raise exception 'El costo de envío lo calcula el sistema; no se puede cambiar a mano';
+  end if;
+
+  -- El nuevo total no puede quedar por debajo de lo que ya se pagó
+  if new.costo_envio is distinct from old.costo_envio then
+    select coalesce(sum(subtotal), 0) into v_total
+      from public.pedido_items where pedido_id = new.id;
+    v_total := v_total + new.costo_envio;
+    select coalesce(sum(efectivo + qr), 0) into v_pagado
+      from public.pagos where pedido_id = new.id and not anulado;
+    if v_total < v_pagado then
+      raise exception 'No se puede cambiar el envío: el nuevo total (% Bs) sería menor que lo ya pagado (% Bs). Primero anula un pago.', v_total, v_pagado;
+    end if;
+  end if;
+
   -- La fecha de entrega la fija el servidor: hoy al pasar a "entregado", y no se toca después
   if new.estado = 'entregado' then
     if old.estado = 'entregado' then

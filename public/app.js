@@ -42,11 +42,19 @@ function late(o){return o.f<today()&&o.es!=='Entregado'&&o.es!=='Cancelado'}
 function pend(o){return o.es==='Cancelado'?0:o.it.filter(function(i){return !i.h}).length}
 function byN(n){return S.orders.filter(function(o){return o.n===n})[0]}
 function allDone(o){return o.it.length>0&&o.it.every(function(i){return i.h})}
+/* Celular normalizado: sin espacios, guiones, paréntesis ni "+", y sin el 591 inicial (igual que crear_pedido) */
+function ncel(s){var d=String(s==null?'':s).replace(/[\s\-()+]/g,'');return /^591\d{8}$/.test(d)?d.slice(3):d}
+/* Título de un pedido: el nombre del cliente o, si no hay, su celular */
+function nom(o){return o.cl||o.cel}
+function envFalta(o){return !!o.env&&o.es!=='Cancelado'&&!(o.env.nom&&o.env.cel&&o.env.ciu)}
+function envTxt(o){return !o.env?'Retiro en tienda':(o.env.ciu?'Envío a '+o.env.ciu:'Envío (ciudad pendiente)')}
+function prevCount(cel){var c=ncel(cel);if(c.length<7)return 0;return S.orders.filter(function(o){return ncel(o.cel)===c}).length}
+function avisoCliente(){var n=prevCount(NP.cel),el=$('#regmsg');if(!el)return;el.textContent=n===1?'Cliente con 1 pedido anterior':'Cliente con '+n+' pedidos anteriores';el.style.display=n?'':'none'}
 
 /* ---------- datos ---------- */
 function mapOrder(r){
-return {id:r.id,n:r.numero,cl:r.cliente_nombre,cel:r.cliente_celular,
-env:r.tipo_entrega==='envio'?{nom:r.envio_nombre,cel:r.envio_celular,ciu:r.envio_ciudad,tro:r.envio_tropico?1:0}:null,
+return {id:r.id,n:r.numero,cl:r.cliente_nombre||'',cel:r.cliente_celular,
+env:r.tipo_entrega==='envio'?{nom:r.envio_nombre||'',cel:r.envio_celular||'',ciu:r.envio_ciudad||'',tro:r.envio_tropico?1:0}:null,
 trv:r.costo_envio||0,f:r.fecha_entrega,reg:lp(r.creado_en),ent:r.fecha_entregado,es:ESL[r.estado]||r.estado,
 it:(r.pedido_items||[]).slice().sort(function(a,b){return a.orden-b.orden}).map(function(i){return {id:i.id,d:i.diseno,cm:+i.cm,p:+i.precio_metro,df:i.doble_forro?1:0,c:i.color_forro||'',h:i.hecho?1:0,rec:i.recargo,sub:i.subtotal}}),
 pg:(r.pagos||[]).slice().sort(function(a,b){return a.creado_en<b.creado_en?-1:1}).map(function(p){return {id:p.id,d:lp(p.creado_en),t:Date.parse(p.creado_en),ef:p.efectivo,qr:p.qr,v:p.verificado?1:0,x:p.anulado?1:0,mot:p.motivo_anulacion||''}})};
@@ -115,7 +123,7 @@ var e=r.data;
 if(e.rol==='vendedora'&&!e.dentro){clearInterval(tim);R.fuera=e;R.role=null;await sb.auth.signOut();R.scr='fuera';draw();return}
 R.est=e;
 var af=document.activeElement;
-var calma=!ask.o&&['nuevo','accesos','ajustes','clave'].indexOf(R.scr)<0&&!(af&&/INPUT|SELECT|TEXTAREA/.test(af.tagName));
+var calma=!ask.o&&!R.envdirty&&['nuevo','accesos','ajustes','clave'].indexOf(R.scr)<0&&!(af&&/INPUT|SELECT|TEXTAREA/.test(af.tagName));
 if(calma){try{await cargar();draw()}catch(x){}}
 }
 
@@ -187,18 +195,18 @@ var tabs=[['todos','Todos'],['saldo','Con saldo'],['pagado','Pagados'],['cortes'
 return hero({kick:'Por cobrar',big:bs(cob),stats:[[S.orders.length,'Pedidos'],[cp,'Cortes pendientes'],[at,'Atrasados',at>0]]})+
 '<div class="sheet"><div class="cn" style="padding-top:12px"><input id="q" class="fi" aria-label="Buscar pedido" placeholder="Buscar por celular, nombre o número" value="'+esc(R.q)+'" style="background:var(--surface2)"><div class="tabs">'+tabs+'</div><div id="pl"></div></div></div>'}
 function orderRow(o){
-var dl=o.env?'Envío a '+esc(o.env.ciu):'Retiro en tienda';
+var dl=esc(envTxt(o));
 dl+=o.ent?', entregado '+fd(o.ent):', entrega '+fd(o.f);
 var tk=o.it.map(function(i){return '<span class="tk'+(i.h?' f':'')+'"></span>'}).join('');
 var done=o.it.filter(function(i){return i.h}).length,s=sal(o);
-return '<button class="ord" data-a="open" data-v="'+o.n+'"><div class="l" style="align-items:baseline"><b style="font-size:17px">'+esc(o.cl)+'</b><span class="serif" style="font-size:23px">'+bs(tot(o))+'</span></div>'+
+return '<button class="ord" data-a="open" data-v="'+o.n+'"><div class="l" style="align-items:baseline"><b style="font-size:17px">'+esc(nom(o))+'</b><span class="serif" style="font-size:23px">'+bs(tot(o))+'</span></div>'+
 '<div class="l" style="margin-top:4px"><span class="mut">Pedido '+o.n+'</span>'+(s>0?'<span class="debt">Debe '+bs(s)+'</span>':(o.es!=='Cancelado'?'<span class="good" style="font-size:13px">Pagado</span>':''))+'</div>'+
-'<div class="mut" style="margin-top:3px">'+dl+'</div>'+
+'<div class="mut" style="margin-top:3px">'+dl+'</div>'+(envFalta(o)?'<div style="margin-top:6px"><span class="chip c-warn">Datos de envío pendientes</span></div>':'')+
 '<div class="l" style="margin-top:8px"><span style="display:flex;align-items:center;gap:8px"><span class="ticks">'+tk+'</span><span class="mut" style="font-size:12px">Cortes '+done+' de '+o.it.length+'</span></span><span style="display:flex;gap:6px">'+chipEs(o)+(late(o)?'<span class="chip c-late">Atrasado</span>':'')+'</span></div></button>'}
 function drawPedList(){
-var q=R.q.toLowerCase();
+var q=R.q.toLowerCase().trim(),qc=q.replace(/[\s\-]/g,''),qn=ncel(q);
 var rows=S.orders.filter(function(o){
-if(q&&(o.cl+' '+o.cel+' '+o.n).toLowerCase().indexOf(q)<0)return false;
+if(q){var h=(o.cl+' '+o.cel+' '+o.n).toLowerCase(),hc=h.replace(/[\s\-]/g,'');if(h.indexOf(q)<0&&hc.indexOf(qc)<0&&!(qn&&hc.indexOf(qn)>=0))return false}
 if(R.flt==='saldo')return sal(o)>0;
 if(R.flt==='pagado')return sal(o)<=0&&o.es!=='Cancelado';
 if(R.flt==='atrasado')return late(o);
@@ -210,7 +218,7 @@ el.innerHTML=rows.length?rows.map(orderRow).join(''):'<div class="empty">'+(S.or
 function sDet(){
 var o=byN(R.id);if(!o){R.scr='pedidos';return sPed()}
 var s=sal(o),p=paid(o),t=tot(o),pm=R.pm||'Efectivo';
-var h=hero({back:'pedidos',right:chipEs(o,'background:transparent;border:1px solid rgba(255,255,255,.4);color:#fff'),kick:'Pedido '+o.n,title:esc(o.cl),sub:esc(o.cel)+'<br>'+(o.env?'Envío a '+esc(o.env.ciu):'Retiro en tienda')+(o.ent?', entregado '+fd(o.ent):', entrega '+fd(o.f))});
+var h=hero({back:'pedidos',right:chipEs(o,'background:transparent;border:1px solid rgba(255,255,255,.4);color:#fff'),kick:'Pedido '+o.n,title:esc(nom(o)),sub:(o.cl?esc(o.cel)+'<br>':'')+esc(envTxt(o))+(o.ent?', entregado '+fd(o.ent):', entrega '+fd(o.f))});
 var b='<div class="sheet"><div class="cn">';
 if(o.es==='Cancelado')b+='<div class="box" style="margin-top:18px"><b>Pedido cancelado</b></div>';
 else if(s>0){
@@ -229,7 +237,7 @@ b+='<div class="crow"><input type="checkbox" data-a="cut" data-v="'+j+'" aria-la
 b+='</div>';
 if(o.trv>0)b+='<div class="l mut" style="padding:8px 4px 0"><span>Envío trópico</span><span>'+bs(o.trv)+'</span></div>';
 b+='<div class="l" style="padding:8px 4px 0"><b>Total del pedido</b><span class="serif" style="font-size:26px">'+bs(t)+'</span></div>';
-if(o.env)b+='<h2 class="serif h2" style="margin-top:22px">Datos de envío</h2><div class="box" style="margin-top:8px"><div><b>'+esc(o.env.nom)+'</b></div><div class="mut">'+esc(o.env.cel)+', '+esc(o.env.ciu)+(o.env.tro?', trópico':'')+'</div></div>';
+if(o.env)b+=secEnvio(o);
 b+='<h2 class="serif h2" style="margin:22px 0 8px">Pagos</h2>';
 if(!o.pg.length)b+='<div class="mut">Sin pagos registrados</div>';
 o.pg.forEach(function(x,j){
@@ -241,7 +249,18 @@ b+='<h2 class="serif h2" style="margin:22px 0 8px"><label for="es">Estado del pe
 '<div class="g2" style="margin-top:14px"><button class="btn o2" data-a="pdfped">Descargar PDF</button><button class="btn o2" style="margin-top:0" data-a="wa">Enviar por WhatsApp</button></div></div></div>';
 return h+b}
 
-function resetNP(){NP={cel:'',nom:'',items:[{d:0,cm:'',p:'',df:0,c:''}],ent:'retiro',en:'',ec:'',ci:'',tro:0,f:addDays(today(),2),pm:'Efectivo',ad:'',ae:'',aq:''}}
+/* Datos de envío del pedido: dueño y vendedora pueden completarlos o corregirlos mientras no esté cancelado */
+function secEnvio(o){
+var can=o.es!=='Cancelado',d=can?'':' disabled';
+var h='<h2 class="serif h2" style="margin-top:22px">Datos de envío</h2>';
+if(envFalta(o))h+='<div class="note" style="margin-top:8px"><span><b>Datos de envío pendientes.</b> Completa el nombre, el celular y la ciudad.</span></div>';
+h+='<div class="box" style="margin-top:8px"><div class="fld"><label class="lb" for="env_nom">Nombre completo</label><input id="env_nom" class="fi" value="'+esc(o.env.nom)+'"'+d+'></div>'+
+'<div class="g2"><div><label class="lb" for="env_cel">Celular</label><input id="env_cel" class="fi" inputmode="tel" value="'+esc(o.env.cel)+'"'+d+'></div><div><label class="lb" for="env_ciu">Ciudad</label><input id="env_ciu" class="fi" value="'+esc(o.env.ciu)+'"'+d+'></div></div>'+
+'<label class="ck" style="margin-top:8px"><input type="checkbox" id="env_tro"'+(o.env.tro?' checked':'')+d+'> ¿Es para trópico? (+'+S.TR+' Bs)</label>'+
+(can?'<div id="enverr" class="err"></div><button class="btn" data-a="saveenv">Guardar datos de envío</button>':'<p class="mut" style="margin:10px 0 0">Pedido cancelado: no se pueden cambiar los datos de envío.</p>')+'</div>';
+return h}
+
+function resetNP(){NP={cel:'',items:[{d:0,cm:'',p:'',df:0,c:''}],ent:'retiro',en:'',ec:'',ci:'',tro:0,f:addDays(today(),2),pm:'Efectivo',ad:'',ae:'',aq:''}}
 /* Números del formulario: aceptan coma o punto, máximo 2 decimales; siempre se normalizan con punto */
 function dnum(s){var t=String(s==null?'':s).trim();if(t==='')return {v:0,e:''};
 if(/^(\d+([.,]\d{0,2})?|[.,]\d{1,2})$/.test(t))return {v:parseFloat(t.replace(',','.')),e:''};
@@ -269,15 +288,15 @@ var campo=mix?'<div class="g2"><div><label class="lb" for="ae">Efectivo (Bs)</la
 return '<div class="sec"><h2 class="serif h2" style="margin-bottom:4px">Adelanto</h2><p class="mut" style="margin:0 0 12px">Déjalo en 0 si todavía no pagó</p><div class="seg" role="group" aria-label="Método del adelanto" style="margin-bottom:12px">'+met+'</div>'+campo+'</div>'}
 function sNuevo(){
 if(!NP)resetNP();
-var reg=NP.cel.trim().length>=7&&S.orders.some(function(o){return o.cel===NP.cel.trim()});
+var prev=prevCount(NP.cel);
 var h=hero({back:'pedidos',title:'Nuevo pedido'});
 if(!S.designs.length){
 return h+'<div class="sheet"><div class="cn narrow"><h2 class="serif h2" style="margin-top:22px">Primero agrega diseños</h2><p class="mut" style="font-size:15px">'+(own()?'La lista de diseños está vacía. Agrega los diseños de tela en Ajustes para poder registrar pedidos.':'La lista de diseños está vacía. Pídele al dueño que agregue los diseños.')+'</p>'+(own()?'<button class="btn" data-a="go" data-v="ajustes">Ir a Ajustes</button>':'')+'</div></div>'}
 h+='<div class="sheet"><div class="cn narrow" style="max-width:640px">'+
-'<div class="sec"><h2 class="serif h2" style="margin-bottom:12px">Cliente</h2><div class="g2"><div><label class="lb" for="cel">Celular</label><input id="cel" class="fi" inputmode="numeric" data-np="cel" value="'+esc(NP.cel)+'" placeholder="71234567"></div><div><label class="lb" for="nom">Nombre</label><input id="nom" class="fi" data-np="nom" value="'+esc(NP.nom)+'" placeholder="Nombre del cliente"></div></div><div id="regmsg" class="good" style="font-size:13px;margin-top:8px;'+(reg?'':'display:none')+'">Cliente ya registrado</div></div>'+
+'<div class="sec"><h2 class="serif h2" style="margin-bottom:12px">Cliente</h2><div class="fld"><label class="lb" for="cel">Celular</label><input id="cel" class="fi" inputmode="tel" data-np="cel" value="'+esc(NP.cel)+'" placeholder="71234567"></div><div id="regmsg" class="mut" style="font-size:13px;margin-top:2px;'+(prev?'':'display:none')+'">'+(prev===1?'Cliente con 1 pedido anterior':'Cliente con '+prev+' pedidos anteriores')+'</div></div>'+
 '<div class="sec"><div class="l" style="margin-bottom:12px"><h2 class="serif h2">Cortes</h2><span class="mut" id="ncnt"></span></div><div id="ni"></div><button class="btn o" data-a="addcut">'+IC.plus+' Agregar corte</button><div class="mut" style="margin-top:10px">'+(own()?'<button class="menu" style="min-height:44px;border:none;font-size:14px;color:var(--accent)" data-a="go" data-v="ajustes">Agregar diseño a la lista</button>':'¿Falta un diseño? Pídeselo al dueño.')+'</div></div>'+
 '<div class="sec"><h2 class="serif h2" style="margin-bottom:12px">Entrega</h2><div class="seg" role="group" aria-label="Tipo de entrega"><button data-a="nent" data-v="retiro" class="'+(NP.ent==='retiro'?'on':'')+'">Retiro en tienda</button><button data-a="nent" data-v="envio" class="'+(NP.ent==='envio'?'on':'')+'">Envío</button></div>';
-if(NP.ent==='envio')h+='<div style="margin-top:12px"><div class="fld"><label class="lb" for="en">Nombre completo</label><input id="en" class="fi" data-np="en" value="'+esc(NP.en)+'"></div><div class="g2"><div><label class="lb" for="ec">Celular</label><input id="ec" class="fi" inputmode="numeric" data-np="ec" value="'+esc(NP.ec)+'"></div><div><label class="lb" for="ci">Ciudad</label><input id="ci" class="fi" data-np="ci" value="'+esc(NP.ci)+'"></div></div><label class="ck" style="margin-top:8px"><input type="checkbox" id="ntro" data-a="ntro"'+(NP.tro?' checked':'')+'> ¿Es para trópico? (+'+S.TR+' Bs)</label></div>';
+if(NP.ent==='envio')h+='<div style="margin-top:12px"><p class="mut" style="margin:0 0 10px;font-size:13px">Estos datos son opcionales. Puedes completarlos después.</p><div class="fld"><label class="lb" for="en">Nombre completo</label><input id="en" class="fi" data-np="en" value="'+esc(NP.en)+'"></div><div class="g2"><div><label class="lb" for="ec">Celular</label><input id="ec" class="fi" inputmode="numeric" data-np="ec" value="'+esc(NP.ec)+'"></div><div><label class="lb" for="ci">Ciudad</label><input id="ci" class="fi" data-np="ci" value="'+esc(NP.ci)+'"></div></div><label class="ck" style="margin-top:8px"><input type="checkbox" id="ntro" data-a="ntro"'+(NP.tro?' checked':'')+'> ¿Es para trópico? (+'+S.TR+' Bs)</label></div>';
 h+='<div class="fld" style="margin-top:12px"><label class="lb" for="nf">Fecha de entrega</label><input id="nf" type="date" class="fi" data-np="f" value="'+NP.f+'"></div></div>'+
 secAdelanto()+'<div class="box" style="background:var(--hero);color:#fff;border:none;margin-top:18px"><div class="l" style="color:var(--hero-muted)"><span>Cortes</span><span id="n1"></span></div><div class="l" style="color:var(--hero-muted)"><span>Envío trópico</span><span id="n2"></span></div><div class="l" style="border-top:1px solid rgba(255,255,255,.2);margin-top:8px;padding-top:10px;align-items:baseline"><b style="color:#D8B76E">Total</b><span class="serif" style="font-size:44px;line-height:1.05" id="n3"></span></div><div class="l" style="color:var(--hero-muted);margin-top:8px"><span>Adelanto</span><span id="n4"></span></div><div class="l" id="n5r" style="color:var(--hero-muted)"><span>Saldo pendiente</span><span id="n5"></span></div><div id="n6" style="display:none;font-weight:700;margin-top:4px">Pedido pagado por completo</div><div style="font-size:12px;color:var(--hero-muted);margin:6px 0 12px">Cada corte se redondea hacia arriba a Bs enteros.</div><div id="nerr" class="err" style="color:#FFB3AD"></div><button class="btn b" data-a="savep">Guardar pedido</button></div></div></div>';
 return h}
@@ -315,7 +334,7 @@ var b='<div class="sheet"><div class="cn" style="padding-top:8px">',any=0;
 Object.keys(g).forEach(function(n){var r=g[n];if(!r.length)return;any=1;
 var pe=r.filter(function(x){return !x.i.h}),c2=pe.reduce(function(a,x){return a+x.i.cm},0);
 b+='<div class="sec"><div class="l" style="margin-bottom:6px"><span style="display:flex;align-items:center;gap:12px">'+sw(n)+'<b style="font-size:17px">'+esc(n)+'</b></span><span class="mut">'+pe.length+(pe.length===1?' corte':' cortes')+', '+m2(c2)+' m</span></div>';
-r.forEach(function(x){b+='<label class="ck'+(x.i.h?' st-t':'')+'" style="padding:8px 0;min-height:52px"><input type="checkbox" data-a="cx" data-v="'+x.o.n+','+x.j+'"'+(x.i.h?' checked':'')+'><span><b class="serif" style="font-size:20px">'+x.i.cm+' cm</b> <span class="mut">'+esc(x.o.cl)+', pedido '+x.o.n+'</span>'+(x.i.df?'<br><span style="font-size:13px;font-weight:700;color:var(--brass-text)">Forro '+esc(x.i.c.toLowerCase())+'</span>':'')+'</span></label>'});
+r.forEach(function(x){b+='<label class="ck'+(x.i.h?' st-t':'')+'" style="padding:8px 0;min-height:52px"><input type="checkbox" data-a="cx" data-v="'+x.o.n+','+x.j+'"'+(x.i.h?' checked':'')+'><span><b class="serif" style="font-size:20px">'+x.i.cm+' cm</b> <span class="mut">'+esc(nom(x.o))+', pedido '+x.o.n+'</span>'+(x.i.df?'<br><span style="font-size:13px;font-weight:700;color:var(--brass-text)">Forro '+esc(x.i.c.toLowerCase())+'</span>':'')+'</span></label>'});
 b+='</div>'});
 return h+b+(any?'':'<div class="empty">No hay cortes pendientes</div>')+(any&&own()?'<button class="btn o2" style="margin-top:14px" data-a="pdfcor">Descargar PDF de cortes pendientes</button>':'')+'</div></div>'}
 
@@ -352,11 +371,11 @@ var list='';
 if(hv==='pagos'){var rows=[];D.pg.forEach(function(r){var a=R.hm==='ef'?r.p.ef:R.hm==='qr'?r.p.qr:r.p.ef+r.p.qr;if(a>0)rows.push({d:r.p.d,r:r,a:a})});
 grp(rows).forEach(function(g){var s=g[1].reduce(function(a,x){return a+(x.r.p.x?0:x.a)},0);list+='<div class="dh"><span>'+lab(g[0])+'</span><span class="serif" style="font-size:22px">'+bs(s)+'</span></div>';
 g[1].forEach(function(x){var p=x.r.p,m=p.ef>0&&p.qr>0?'Mixto, ef. '+bs(p.ef)+' y QR '+bs(p.qr):p.ef>0?'Efectivo':'QR';
-list+='<div class="hrow"><div class="l"><div class="'+(p.x?'st-t':'')+'"><b>'+esc(x.r.o.cl)+'</b><div class="mut">Pedido '+x.r.o.n+', '+m+(p.x?', anulado':'')+'</div></div><div style="text-align:right"><div class="serif '+(p.x?'st-t':'')+'" style="font-size:20px">'+bs(x.a)+'</div>'+(p.x?'':(p.v?'<span class="good" style="font-size:12px">Verificado</span>':'<span class="chip c-warn">Sin verificar</span>'))+'</div></div></div>'})})}
+list+='<div class="hrow"><div class="l"><div class="'+(p.x?'st-t':'')+'"><b>'+esc(nom(x.r.o))+'</b><div class="mut">Pedido '+x.r.o.n+', '+m+(p.x?', anulado':'')+'</div></div><div style="text-align:right"><div class="serif '+(p.x?'st-t':'')+'" style="font-size:20px">'+bs(x.a)+'</div>'+(p.x?'':(p.v?'<span class="good" style="font-size:12px">Verificado</span>':'<span class="chip c-warn">Sin verificar</span>'))+'</div></div></div>'})})}
 else if(hv==='ventas'){grp(D.pv.map(function(o){return {d:o.reg,o:o}})).forEach(function(g){var s=g[1].reduce(function(a,x){return a+tot(x.o)},0);list+='<div class="dh"><span>'+lab(g[0])+'</span><span class="serif" style="font-size:22px">'+bs(s)+'</span></div>';
-g[1].forEach(function(x){var q=sal(x.o);list+='<div class="hrow"><div class="l"><div><b>'+esc(x.o.cl)+'</b><div class="mut">Pedido '+x.o.n+'</div></div><div style="text-align:right"><div class="serif" style="font-size:20px">'+bs(tot(x.o))+'</div>'+(q>0?'<span class="debt">Debe '+bs(q)+'</span>':'<span class="good" style="font-size:12px">Pagado</span>')+'</div></div></div>'})})}
+g[1].forEach(function(x){var q=sal(x.o);list+='<div class="hrow"><div class="l"><div><b>'+esc(nom(x.o))+'</b><div class="mut">Pedido '+x.o.n+'</div></div><div style="text-align:right"><div class="serif" style="font-size:20px">'+bs(tot(x.o))+'</div>'+(q>0?'<span class="debt">Debe '+bs(q)+'</span>':'<span class="good" style="font-size:12px">Pagado</span>')+'</div></div></div>'})})}
 else if(hv==='entregas'){grp(D.en.map(function(o){return {d:o.ent,o:o}})).forEach(function(g){list+='<div class="dh"><span>'+lab(g[0])+'</span><span>'+g[1].length+(g[1].length===1?' entrega':' entregas')+'</span></div>';
-g[1].forEach(function(x){var q=sal(x.o);list+='<div class="hrow"><div class="l"><div><b>'+esc(x.o.cl)+'</b><div class="mut">Pedido '+x.o.n+', total '+bs(tot(x.o))+'</div></div>'+(q>0?'<span class="debt">Entregado con saldo '+bs(q)+'</span>':'<span class="good" style="font-size:13px">Pagado</span>')+'</div></div>'})})}
+g[1].forEach(function(x){var q=sal(x.o);list+='<div class="hrow"><div class="l"><div><b>'+esc(nom(x.o))+'</b><div class="mut">Pedido '+x.o.n+', total '+bs(tot(x.o))+'</div></div>'+(q>0?'<span class="debt">Entregado con saldo '+bs(q)+'</span>':'<span class="good" style="font-size:13px">Pagado</span>')+'</div></div>'})})}
 else{var lr=lastRetiro(),cs=cashSince();
 list+='<div class="box"><div class="l mut"><span>Último retiro</span><b style="color:var(--text)">'+(lr?lab(lr.d)+', '+bs(lr.m):'Ninguno todavía')+'</b></div><div class="mut" style="margin-top:6px">Efectivo cobrado desde entonces</div><div class="serif" style="font-size:34px;color:var(--accent)">'+bs(cs)+'</div>'+
 '<label class="lb" for="rmon" style="margin-top:10px">Monto a retirar (Bs)</label><input id="rmon" class="fi" inputmode="numeric" value="'+cs+'" style="font-size:20px;font-weight:700;height:52px"><div id="rerr" class="err"></div>'+
@@ -375,9 +394,13 @@ return hero({title:'Más'})+'<div class="sheet"><div class="cn narrow" style="ma
 '<div class="box" style="margin-top:22px"><b>Varios aparatos</b><p class="mut" style="margin:6px 0 0">Los datos se guardan en la nube. Lo que registres en el celular aparece en la laptop y viceversa; se actualizan solos cada pocos segundos.</p></div>'+
 '<button class="btn o2" style="margin-top:6px" data-a="logout">'+IC.out+' Cerrar sesión</button></div></div>'}
 
+/* Saldos por cliente: se agrupan por celular (normalizado); el título es el nombre si alguno de sus pedidos lo tiene */
+function saldosData(){
+var g={},tt=0;S.orders.forEach(function(o){var s=sal(o);if(s>0){var k=ncel(o.cel)||o.cel;var c=g[k]=g[k]||{cel:o.cel,nom:'',s:0,n:[]};if(!c.nom&&o.cl)c.nom=o.cl;c.s+=s;c.n.push(o.n);tt+=s}});
+return {g:g,tt:tt}}
 function sSaldos(){
-var g={},tt=0;S.orders.forEach(function(o){var s=sal(o);if(s>0){var c=g[o.cl]=g[o.cl]||{cel:o.cel,s:0,n:[]};c.s+=s;c.n.push(o.n);tt+=s}});
-var b=Object.keys(g).sort(function(a,c){return g[c].s-g[a].s}).map(function(k){var c=g[k];return '<div class="hrow"><div class="l"><div><b>'+esc(k)+'</b><div class="mut">'+esc(c.cel)+', pedidos '+c.n.join(', ')+'</div></div><span class="debt" style="font-size:16px">'+bs(c.s)+'</span></div></div>'}).join('');
+var D=saldosData(),g=D.g,tt=D.tt;
+var b=Object.keys(g).sort(function(a,c){return g[c].s-g[a].s}).map(function(k){var c=g[k];return '<div class="hrow"><div class="l"><div><b>'+esc(c.nom||c.cel)+'</b><div class="mut">'+(c.nom?esc(c.cel)+', ':'')+'pedidos '+c.n.join(', ')+'</div></div><span class="debt" style="font-size:16px">'+bs(c.s)+'</span></div></div>'}).join('');
 return hero({back:'mas',kick:'Total por cobrar',big:bs(tt)})+'<div class="sheet"><div class="cn" style="padding-top:12px">'+(b||'<div class="empty">Nadie tiene saldo pendiente</div>')+(own()&&b?'<button class="btn o2" style="margin-top:12px" data-a="pdfsal">Descargar PDF de saldos</button>':'')+'</div></div>'}
 
 function sClave(){return hero({back:'mas',title:'Cambiar contraseña'})+'<div class="sheet"><div class="cn narrow"><div class="fld" style="margin-top:18px"><label class="lb" for="k1">Contraseña nueva</label><input id="k1" class="fi" type="password" autocomplete="new-password"></div><div class="fld"><label class="lb" for="k2">Repite la contraseña</label><input id="k2" class="fi" type="password" autocomplete="new-password"></div><div id="kerr" class="err"></div><button class="btn" data-a="saveclave">Guardar contraseña</button></div></div>'}
@@ -416,7 +439,7 @@ $('#app').innerHTML=av+fn();
 if(R.scr==='pedidos')drawPedList();
 if(R.scr==='nuevo')rn();
 }
-function go(s){R.scr=s;if(s==='nuevo')resetNP();draw();window.scrollTo(0,0)}
+function go(s){R.scr=s;R.envdirty=0;if(s==='nuevo')resetNP();draw();window.scrollTo(0,0)}
 
 /* ---------- PDF y WhatsApp ---------- */
 function pdf(titulo,filas,archivo){
@@ -435,8 +458,9 @@ else{d.setFont('helvetica',f.b?'bold':'normal');d.setFontSize(10);var ll=d.split
 });
 d.save(archivo)}
 function pdfPedido(o){
-var f=[{h:'Cliente'},['Nombre',o.cl],['Celular',o.cel],['Entrega',(o.env?'Envío a '+o.env.ciu:'Retiro en tienda')+(o.ent?', entregado '+fd(o.ent):', '+fd(o.f))],['Estado',o.es]];
-if(o.env)f.push(['Datos de envío',o.env.nom+', '+o.env.cel+', '+o.env.ciu+(o.env.tro?' (trópico)':'')]);
+var f=[{h:'Cliente'}];if(o.cl)f.push(['Nombre',o.cl]);
+f.push(['Celular',o.cel],['Entrega',envTxt(o)+(o.ent?', entregado '+fd(o.ent):', '+fd(o.f))],['Estado',o.es]);
+if(o.env){var de=[o.env.nom,o.env.cel,o.env.ciu].filter(Boolean).join(', ');f.push(['Datos de envío',(de||'Pendientes')+(o.env.tro?' (trópico)':'')])}
 f.push({h:'Cortes'});
 o.it.forEach(function(i){f.push([i.d+': '+i.cm+' cm a '+i.p+' Bs por metro'+(i.df?', doble forro '+i.c+' (+'+i.rec+' Bs)':'')+(i.h?' (hecho)':''),bs(csub(i))])});
 if(o.trv>0)f.push(['Envío trópico',bs(o.trv)]);
@@ -451,28 +475,28 @@ var D=histData(),f=[{t:'Periodo: '+rangeLab()},{h:'Resumen'},['Cobrado',bs(D.ef+
 f.push({h:'Pagos'});
 var rows=[];D.pg.forEach(function(r){rows.push({d:r.p.d,r:r})});
 grp(rows).forEach(function(g){var s=g[1].reduce(function(a,x){return a+(x.r.p.x?0:x.r.p.ef+x.r.p.qr)},0);f.push([lab(g[0]),bs(s)]);f[f.length-1].b=1;
-g[1].forEach(function(x){var p=x.r.p,m=p.ef>0&&p.qr>0?'mixto':p.ef>0?'efectivo':'QR';f.push(['   '+x.r.o.cl+', pedido '+x.r.o.n+', '+m+(p.x?', ANULADO':'')+(p.v&&!p.x?', verificado':''),bs(p.ef+p.qr)])})});
+g[1].forEach(function(x){var p=x.r.p,m=p.ef>0&&p.qr>0?'mixto':p.ef>0?'efectivo':'QR';f.push(['   '+nom(x.r.o)+', pedido '+x.r.o.n+', '+m+(p.x?', ANULADO':'')+(p.v&&!p.x?', verificado':''),bs(p.ef+p.qr)])})});
 f.push({h:'Retiros de efectivo'});
 var rr=S.retiros.filter(function(r){return inr(r.d)}).map(function(r){return {d:r.d,m:r.m}});
 if(!rr.length)f.push({t:'Sin retiros en este periodo'});
 rr.forEach(function(r){f.push([lab(r.d),bs(r.m)])});
 pdf('Historial',f,'historial.pdf')}
 function pdfSaldos(){
-var g={},tt=0;S.orders.forEach(function(o){var s=sal(o);if(s>0){var c=g[o.cl]=g[o.cl]||{cel:o.cel,s:0,n:[]};c.s+=s;c.n.push(o.n);tt+=s}});
+var D=saldosData(),g=D.g,tt=D.tt;
 var f=[{h:'Saldos pendientes'}];
-Object.keys(g).sort(function(a,b){return g[b].s-g[a].s}).forEach(function(k){f.push([k+', '+g[k].cel+', pedidos '+g[k].n.join(', '),bs(g[k].s)])});
+Object.keys(g).sort(function(a,b){return g[b].s-g[a].s}).forEach(function(k){var c=g[k];f.push([(c.nom?c.nom+', ':'')+c.cel+', pedidos '+c.n.join(', '),bs(c.s)])});
 f.push(['TOTAL POR COBRAR',bs(tt)]);f[f.length-1].b=1;
 pdf('Saldos pendientes',f,'saldos-pendientes.pdf')}
 function pdfCortes(){
 var g={};S.orders.forEach(function(o){if(o.es==='Entregado'||o.es==='Cancelado')return;o.it.forEach(function(i){if(!i.h)(g[i.d]=g[i.d]||[]).push({o:o,i:i})})});
 var f=[],tc=0,tcm=0;
 Object.keys(g).sort().forEach(function(n){var cm=g[n].reduce(function(a,x){return a+x.i.cm},0);f.push({h:n+': '+g[n].length+' cortes, '+m2(cm)+' m'});tc+=g[n].length;tcm+=cm;
-g[n].forEach(function(x){f.push(['   '+x.i.cm+' cm, '+x.o.cl+', pedido '+x.o.n+(x.i.df?', forro '+x.i.c:''),''])})});
+g[n].forEach(function(x){f.push(['   '+x.i.cm+' cm, '+nom(x.o)+', pedido '+x.o.n+(x.i.df?', forro '+x.i.c:''),''])})});
 if(!f.length)f.push({t:'No hay cortes pendientes'});else f.push(['TOTAL: '+tc+' cortes',m2(tcm)+' m']);
 pdf('Cortes pendientes por diseño',f,'cortes-pendientes.pdf')}
 function whatsapp(o){
 var n=String(o.cel).replace(/\D/g,'');var full=n.length===8?'591'+n:n;
-var t='Hola '+o.cl+', este es el resumen de tu pedido '+o.n+' en Telas JY:\n'+o.it.map(function(i){return '- '+i.d+', '+i.cm+' cm'+(i.df?' con doble forro '+i.c:'')+': '+bs(csub(i))}).join('\n')+(o.trv>0?'\n- Envío a trópico: '+bs(o.trv):'')+'\nTotal: '+bs(tot(o))+'\nPagado: '+bs(paid(o))+'\nSaldo: '+bs(sal(o))+'\n¡Gracias por tu compra!';
+var t='Hola'+(o.cl?' '+o.cl:'')+', este es el resumen de tu pedido '+o.n+' en Telas JY:\n'+o.it.map(function(i){return '- '+i.d+', '+i.cm+' cm'+(i.df?' con doble forro '+i.c:'')+': '+bs(csub(i))}).join('\n')+(o.trv>0?'\n- Envío a trópico: '+bs(o.trv):'')+'\nTotal: '+bs(tot(o))+'\nPagado: '+bs(paid(o))+'\nSaldo: '+bs(sal(o))+'\n¡Gracias por tu compra!';
 window.open('https://wa.me/'+full+'?text='+encodeURIComponent(t),'_blank')}
 
 /* ---------- acciones ---------- */
@@ -488,7 +512,12 @@ if(r.error){er.textContent=/banned/i.test(r.error.message)?'Tu acceso está desa
 await abrirSesion(true)},
 logout:async function(){clearInterval(tim);await sb.auth.signOut();R.role=null;R.est=null;S.orders=[];S.retiros=[];R.scr='login';draw();window.scrollTo(0,0)},
 sync:function(){recargar().then(function(){toast('Datos actualizados')})},
-open:function(e){R.id=+e.dataset.v;R.pm='Efectivo';R.scr='detalle';draw();window.scrollTo(0,0)},
+open:function(e){R.id=+e.dataset.v;R.pm='Efectivo';R.scr='detalle';R.envdirty=0;draw();window.scrollTo(0,0)},
+saveenv:async function(){
+var o=byN(R.id);if(!o||!o.env)return;
+var nm=$('#env_nom').value.trim(),ce=$('#env_cel').value.trim(),ci=$('#env_ciu').value.trim(),tr=$('#env_tro').checked;
+await run(function(){return sb.from('pedidos').update({envio_nombre:nm||null,envio_celular:ce||null,envio_ciudad:ci||null,envio_tropico:tr}).eq('id',o.id)},'Datos de envío guardados');
+R.envdirty=0;await recargar()},
 flt:function(e){R.flt=e.dataset.v;draw()},
 pmeth:function(e){R.pm=e.dataset.v;draw()},
 comp:function(){var o=byN(R.id),s=sal(o);if((R.pm||'Efectivo')==='Mixto'){var ef=parseInt($('#pe').value,10)||0;$('#pq').value=Math.max(0,s-ef)}else $('#pa').value=s},
@@ -550,23 +579,21 @@ mno:function(){closeAsk()},
 mok:function(){var o=ask.o;if(!o)return;var v='';if(o.input){v=$('#mi').value.trim();if(!v){$('#merr').textContent='Escribe el motivo';return}}closeAsk();o.fn(v)}
 };
 async function savep(){
-var er=$('#nerr'),cel=NP.cel.trim(),nom=NP.nom.trim();
+var er=$('#nerr'),cel=ncel(NP.cel);
 if(!S.designs.length){er.textContent='Primero agrega diseños en Ajustes';return}
 if(cel.length<7){er.textContent='Ingresa el celular del cliente';return}
-if(!nom){er.textContent='Ingresa el nombre del cliente';return}
 for(var k=0;k<NP.items.length;k++){var i=NP.items[k];
 if(fe(i.cm)){er.textContent='Corte '+(k+1)+', medida: '+fe(i.cm);return}
 if(fe(i.p)){er.textContent='Corte '+(k+1)+', costo por metro: '+fe(i.p);return}
 if(!(pn(i.cm)>0)){er.textContent='El corte '+(k+1)+' necesita una medida mayor a 0';return}
 if(!(pn(i.p)>0)){er.textContent='El corte '+(k+1)+' necesita el costo por metro';return}
 if(i.df&&!i.c.trim()){er.textContent='Indica el color del doble forro del corte '+(k+1);return}}
-if(NP.ent==='envio'&&(!NP.en.trim()||!NP.ec.trim()||!NP.ci.trim())){er.textContent='El envío necesita nombre completo, celular y ciudad';return}
 var a=adel();
 if(a.err){er.textContent=a.err;return}
 var tt=ntotal();
 if(a.ef+a.qr>tt){er.textContent='El adelanto no puede superar el total ('+bs(tt)+')';return}
 er.textContent='';
-var payload={celular:cel,nombre:nom,entrega:NP.ent,envio_nombre:NP.ent==='envio'?NP.en.trim():null,envio_celular:NP.ent==='envio'?NP.ec.trim():null,envio_ciudad:NP.ent==='envio'?NP.ci.trim():null,tropico:NP.ent==='envio'&&!!NP.tro,fecha_entrega:NP.f||addDays(today(),2),pago_efectivo:a.ef,pago_qr:a.qr,
+var payload={celular:cel,entrega:NP.ent,envio_nombre:NP.ent==='envio'?NP.en.trim():null,envio_celular:NP.ent==='envio'?NP.ec.trim():null,envio_ciudad:NP.ent==='envio'?NP.ci.trim():null,tropico:NP.ent==='envio'&&!!NP.tro,fecha_entrega:NP.f||addDays(today(),2),pago_efectivo:a.ef,pago_qr:a.qr,
 items:NP.items.map(function(i){return {diseno:S.designs[i.d].n,cm:pn(i.cm),precio_metro:pn(i.p),doble_forro:!!i.df,color_forro:i.c.trim()}})};
 var r=await run(function(){return sb.rpc('crear_pedido',{p:payload})});
 if(!r)return;
@@ -597,8 +624,9 @@ else if(a==='aj'){var n=parseInt(e.value,10);if(n>=0){var patch=e.dataset.v==='D
 document.addEventListener('input',function(ev){
 var e=ev.target;
 if(e.id==='q'){R.q=e.value;drawPedList();return}
+if(e.id&&e.id.indexOf('env_')===0){R.envdirty=1;return}
 if(e.dataset.np){NP[e.dataset.np]=e.value;
-if(e.dataset.np==='cel'){var c=e.value.trim(),m=null;if(c.length>=7)S.orders.forEach(function(o){if(o.cel===c&&!m)m=o});if(m){NP.nom=m.cl;$('#nom').value=m.cl}$('#regmsg').style.display=m?'':'none'}
+if(e.dataset.np==='cel')avisoCliente();
 if(e.dataset.np==='ad'||e.dataset.np==='ae'||e.dataset.np==='aq')ntot();
 return}
 if(e.dataset.ni!==undefined){var it=NP.items[+e.dataset.ni],f=e.dataset.f;it[f]=e.value;
