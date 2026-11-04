@@ -87,7 +87,7 @@ Solo dos cuentas: dueño y vendedora. Sin registro público.
 ## Eliminar pedidos
 - Solo el dueño ve el botón "Eliminar pedido" (al final del detalle) y la base de datos también lo exige.
 - Pide confirmación y borra el pedido con sus cortes. No se puede deshacer. [HECHO]
-- Un pedido con pagos registrados (aunque estén anulados) NO se elimina: se cancela. Así los pagos nunca se pierden. [HECHO]
+- Se puede eliminar cualquier pedido, también con adelanto o pagos: sus cortes y pagos se borran con él (la confirmación avisa cuántos pagos tiene). Esto cambia el efectivo y el historial. [HECHO]
 
 ## Pagos
 

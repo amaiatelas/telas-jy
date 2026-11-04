@@ -244,7 +244,7 @@ b+='<div class="hrow"><div class="l"><div class="'+(x.x?'st-t':'')+'"><b>'+me+'<
 if(!own()&&o.pg.length)b+='<div class="mut">Solo el dueño verifica y anula pagos.</div>';
 b+='<h2 class="serif h2" style="margin:22px 0 8px"><label for="es">Estado del pedido</label></h2><select id="es" class="fi" data-a="es">'+['En proceso','Listo','Entregado'].concat(own()?['Cancelado']:[]).map(function(x){return '<option'+(x===o.es?' selected':'')+'>'+x+'</option>'}).join('')+'</select>'+
 '<div class="g2" style="margin-top:14px"><button class="btn" data-a="wa">Enviar por WhatsApp</button><button class="btn o2" style="margin-top:0" data-a="pdfped">Descargar PDF</button></div>'+
-(own()?(o.pg.length?'<p class="mut" style="margin:18px 0 0">Este pedido tiene pagos registrados, por eso no se puede eliminar. Si ya no va, cámbialo a Cancelado.</p>':'<button class="btn o2 danger" style="margin-top:22px" data-a="delp">'+IC.trash+' Eliminar pedido</button>'):'')+'</div></div>';
+(own()?'<button class="btn o2 danger" style="margin-top:22px" data-a="delp">'+IC.trash+' Eliminar pedido</button>':'')+'</div></div>';
 return h+b}
 
 /* Datos de envío del pedido: dueño y vendedora pueden completarlos o corregirlos mientras no esté cancelado */
@@ -572,7 +572,8 @@ saveclave:async function(){var a=$('#k1').value,b=$('#k2').value,er=$('#kerr');i
 var r=await run(function(){return sb.auth.updateUser({password:a})},'Contraseña actualizada');if(r)go('mas')},
 pdfped:function(){var o=byN(R.id);if(o)pdfPedido(o)},
 delp:function(){var o=byN(R.id);if(!o||!own())return;
-ask({title:'¿Eliminar el pedido '+o.n+'?',text:'Se borra por completo, con sus cortes. No se puede deshacer.',ok:'Eliminar pedido',danger:1,fn:async function(){
+var pgs=o.pg.reduce(function(a,p){return a+(p.x?0:p.ef+p.qr)},0);
+ask({title:'¿Eliminar el pedido '+o.n+'?',text:o.pg.length?'Tiene '+o.pg.length+(o.pg.length===1?' pago registrado':' pagos registrados')+' ('+bs(pgs)+'). Se borra todo: el pedido, sus cortes y sus pagos. No se puede deshacer.':'Se borra por completo, con sus cortes. No se puede deshacer.',ok:'Eliminar pedido',danger:1,fn:async function(){
 var r=await run(function(){return sb.from('pedidos').delete().eq('id',o.id).select('id')});
 if(!r)return;
 if(!r.data||!r.data.length){toast('No se pudo eliminar el pedido');return}

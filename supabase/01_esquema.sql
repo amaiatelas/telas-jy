@@ -452,19 +452,10 @@ drop trigger if exists t_pedidos_actualizar on public.pedidos;
 create trigger t_pedidos_actualizar before update on public.pedidos
   for each row execute function public.pedidos_antes_actualizar();
 
--- Eliminar pedido: solo el dueño (política de abajo) y solo si no tiene pagos registrados.
--- Los pagos nunca se borran (ni siquiera los anulados): un pedido con pagos se cancela, no se elimina.
-create or replace function public.pedidos_antes_borrar()
-returns trigger language plpgsql as $$
-begin
-  if exists (select 1 from public.pagos where pedido_id = old.id) then
-    raise exception 'Este pedido tiene pagos registrados. Cancélalo en lugar de eliminarlo';
-  end if;
-  return old;
-end $$;
+-- Eliminar pedido: solo el dueño (ver política pedidos_borrar). Se puede eliminar cualquier pedido,
+-- también con pagos; sus cortes y sus pagos se borran con él. (Versión anterior bloqueaba los que tenían pagos.)
 drop trigger if exists t_pedidos_borrar on public.pedidos;
-create trigger t_pedidos_borrar before delete on public.pedidos
-  for each row execute function public.pedidos_antes_borrar();
+drop function if exists public.pedidos_antes_borrar();
 
 -- Corte nuevo: el recargo de doble forro lo fija el servidor. La vendedora solo puede
 -- agregar cortes mientras se crea el pedido (nunca a un pedido que ya existe).
