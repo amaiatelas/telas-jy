@@ -329,6 +329,103 @@ begin
   return v_num;
 end $$;
 
+-- Editar pedido (solo el dueño): cortes y datos de entrega, en una sola operación.
+-- Si algo falla, no se guarda nada. El nuevo total no puede quedar por debajo de lo ya pagado.
+create or replace function public.editar_pedido(p jsonb)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v_id uuid := (p->>'id')::uuid;
+  v_ped public.pedidos%rowtype;
+  v_old public.pedido_items%rowtype;
+  v_entrega text := p->>'entrega';
+  v_trop boolean := coalesce((p->>'tropico')::boolean, false);
+  v_keep uuid[];
+  v_df boolean;
+  v_total integer;
+  v_pagado integer;
+  it jsonb;
+  i smallint := 0;
+begin
+  if not public.es_dueno() then
+    raise exception 'Solo el dueño puede editar pedidos';
+  end if;
+  select * into v_ped from public.pedidos where id = v_id for update;
+  if not found then
+    raise exception 'No se encontró el pedido';
+  end if;
+  if v_ped.estado = 'cancelado' then
+    raise exception 'Un pedido cancelado no se puede editar';
+  end if;
+  if v_entrega is null or v_entrega not in ('retiro', 'envio') then
+    raise exception 'Tipo de entrega no válido';
+  end if;
+  if jsonb_array_length(coalesce(p->'items', '[]'::jsonb)) = 0 then
+    raise exception 'El pedido necesita al menos un corte';
+  end if;
+
+  -- cortes: se borran los que ya no están, se actualizan los que siguen y se agregan los nuevos
+  select coalesce(array_agg((x->>'id')::uuid) filter (where nullif(x->>'id', '') is not null), '{}')
+    into v_keep from jsonb_array_elements(p->'items') x;
+  delete from public.pedido_items where pedido_id = v_id and not (id = any(v_keep));
+
+  for it in select * from jsonb_array_elements(p->'items') loop
+    i := i + 1;
+    v_df := coalesce((it->>'doble_forro')::boolean, false);
+    if v_df and coalesce(trim(it->>'color_forro'), '') = '' then
+      raise exception 'Indica el color del doble forro del corte %', i;
+    end if;
+    if nullif(it->>'id', '') is not null then
+      select * into v_old from public.pedido_items
+        where id = (it->>'id')::uuid and pedido_id = v_id;
+      if not found then
+        raise exception 'Corte no encontrado';
+      end if;
+      update public.pedido_items set
+        orden = i,
+        diseno = it->>'diseno',
+        cm = (it->>'cm')::numeric,
+        precio_metro = (it->>'precio_metro')::numeric,
+        doble_forro = v_df,
+        color_forro = case when v_df then nullif(trim(it->>'color_forro'), '') else null end,
+        recargo = case when not v_df then 0
+                       when v_old.doble_forro then v_old.recargo
+                       else coalesce((select recargo_forro from public.ajustes where id = 1), 70) end
+      where id = v_old.id;
+    else
+      insert into public.pedido_items (pedido_id, orden, diseno, cm, precio_metro, doble_forro, color_forro)
+      values (v_id, i, it->>'diseno', (it->>'cm')::numeric, (it->>'precio_metro')::numeric,
+              v_df, case when v_df then nullif(trim(it->>'color_forro'), '') else null end);
+    end if;
+  end loop;
+
+  -- entrega: el costo del trópico lo recalcula el trigger de pedidos
+  if v_entrega <> v_ped.tipo_entrega then
+    if v_entrega = 'envio' then
+      update public.pedidos set tipo_entrega = 'envio' where id = v_id;
+    else
+      update public.pedidos set tipo_entrega = 'retiro', envio_nombre = null, envio_celular = null,
+        envio_ciudad = null, envio_tropico = false where id = v_id;
+    end if;
+  end if;
+  if v_entrega = 'envio' then
+    update public.pedidos set
+      envio_nombre = nullif(trim(p->>'envio_nombre'), ''),
+      envio_celular = nullif(trim(p->>'envio_celular'), ''),
+      envio_ciudad = nullif(trim(p->>'envio_ciudad'), ''),
+      envio_tropico = v_trop
+    where id = v_id;
+  end if;
+
+  -- el nuevo total no puede quedar por debajo de lo pagado
+  select coalesce(sum(subtotal), 0) + (select costo_envio from public.pedidos where id = v_id)
+    into v_total from public.pedido_items where pedido_id = v_id;
+  select coalesce(sum(efectivo + qr), 0) into v_pagado
+    from public.pagos where pedido_id = v_id and not anulado;
+  if v_total < v_pagado then
+    raise exception 'El nuevo total (% Bs) sería menor que lo ya pagado (% Bs). Primero anula un pago.', v_total, v_pagado;
+  end if;
+end $$;
+
 -- Guarda el horario completo de la vendedora (solo el dueño)
 create or replace function public.guardar_horarios(p jsonb)
 returns void language plpgsql as $$
@@ -706,6 +803,7 @@ revoke all on function public.estado_acceso()      from public, anon;
 revoke all on function public.registrar_acceso()   from public, anon;
 revoke all on function public.crear_pedido(jsonb)  from public, anon;
 revoke all on function public.guardar_horarios(jsonb) from public, anon;
+revoke all on function public.editar_pedido(jsonb) from public, anon;
 
 grant execute on function public.es_dueno()           to authenticated;
 grant execute on function public.dentro_de_horario()  to authenticated;
@@ -714,3 +812,4 @@ grant execute on function public.estado_acceso()      to authenticated;
 grant execute on function public.registrar_acceso()   to authenticated;
 grant execute on function public.crear_pedido(jsonb)  to authenticated;
 grant execute on function public.guardar_horarios(jsonb) to authenticated;
+grant execute on function public.editar_pedido(jsonb) to authenticated;

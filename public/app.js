@@ -122,7 +122,7 @@ var e=r.data;
 if(e.rol==='vendedora'&&!e.dentro){clearInterval(tim);R.fuera=e;R.role=null;await sb.auth.signOut();R.scr='fuera';draw();return}
 R.est=e;
 var af=document.activeElement;
-var calma=!ask.o&&!R.envdirty&&['nuevo','accesos','ajustes','clave'].indexOf(R.scr)<0&&!(af&&/INPUT|SELECT|TEXTAREA/.test(af.tagName));
+var calma=!ask.o&&!R.envdirty&&['nuevo','editar','accesos','ajustes','clave'].indexOf(R.scr)<0&&!(af&&/INPUT|SELECT|TEXTAREA/.test(af.tagName));
 if(calma){try{await cargar();draw()}catch(x){}}
 }
 
@@ -152,6 +152,7 @@ mas:'<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hi
 chev:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>',
 trash:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12"/></svg>',
 plus:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>',
+edit:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4zM13.5 6.5l4 4"/></svg>',
 out:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4M15 8l4 4-4 4M19 12H9"/></svg>'};
 
 function hero(o){
@@ -199,7 +200,7 @@ var dl=esc(envTxt(o))+(o.ent?', entregado '+fd(o.ent):'');
 var tk=o.it.map(function(i){return '<span class="tk'+(i.h?' f':'')+'"></span>'}).join('');
 var done=o.it.filter(function(i){return i.h}).length,s=sal(o),t=tot(o);
 var amt=s>0?'<span class="debt-l">Debe</span><span class="serif amt-d">'+bs(s)+'</span><span class="mut">de '+bs(t)+'</span>':'<span class="serif amt">'+bs(t)+'</span>'+(o.es!=='Cancelado'?'<span class="good">Pagado</span>':'');
-return '<button class="ord" data-a="open" data-v="'+o.n+'"><div class="ord-main"><b class="ord-n">'+esc(nom(o))+'</b><span class="mut">Pedido '+o.n+', '+dl+'</span>'+(envFalta(o)?'<span class="chip c-warn" style="align-self:flex-start">Datos de envío pendientes</span>':'')+
+return '<button class="ord" data-a="open" data-v="'+o.n+'"><div class="ord-main"><b class="ord-n">'+esc(nom(o))+'</b><span class="mut">Pedido '+o.n+', '+dl+'</span>'+(envFalta(o)?'<span class="chip c-warn" style="align-self:flex-start">Datos de envío pendientes</span>':'')+(own()&&o.pg.some(function(x){return !x.x&&x.qr>0&&!x.v})?'<span class="chip c-warn" style="align-self:flex-start">QR sin verificar en el banco</span>':'')+
 '<div class="ord-meta">'+chipEs(o)+'<span class="ticks">'+tk+'</span><span class="mut">Cortes '+done+' de '+o.it.length+'</span></div></div><div class="ord-amt">'+amt+'</div></button>'}
 function drawPedList(){
 var q=R.q.toLowerCase().trim(),qc=q.replace(/[\s\-]/g,''),qn=ncel(q);
@@ -227,7 +228,7 @@ b+='<div class="saldo"><div class="l" style="align-items:flex-end"><div><div sty
 '<div id="perr" class="err" style="color:var(--saldo-soft)"></div><div class="g2"><button class="btn b" data-a="comp">Completar pago</button><button class="btn w" data-a="reg" style="margin-top:0">Registrar pago</button></div></div>'}
 else b+='<div class="pagado">Pedido pagado por completo</div>';
 if(o.es==='En proceso'&&allDone(o))b+='<div class="note"><span><b>Todos los cortes hechos.</b> ¿Marcar como listo?</span><button class="btn sm" style="width:auto" data-a="listo">Marcar como listo</button></div>';
-b+='<div class="l" style="margin:6px 0"><h2 class="serif h2">Cortes</h2><span class="mut">'+o.it.filter(function(i){return i.h}).length+' de '+o.it.length+' hechos</span></div><div class="card">';
+b+='<div class="l" style="margin:6px 0"><h2 class="serif h2">Cortes</h2><span style="display:flex;align-items:center;gap:10px"><span class="mut">'+o.it.filter(function(i){return i.h}).length+' de '+o.it.length+' hechos</span>'+(own()&&o.es!=='Cancelado'?'<button class="btn o sm" style="width:auto;margin:0;height:40px;padding:0 14px" data-a="edit">'+IC.edit+' Editar pedido</button>':'')+'</span></div><div class="card">';
 o.it.forEach(function(i,j){
 var raw=craw(i),rr=raw!==Math.round(raw)?'<div class="mut" style="font-size:11px">'+raw.toFixed(2).replace('.',',')+' redondeado</div>':'';
 b+='<div class="crow"><input type="checkbox" data-a="cut" data-v="'+j+'" aria-label="Marcar corte '+esc(i.d)+' como hecho"'+(i.h?' checked':'')+'>'+sw(i.d)+'<div style="flex:1"><div style="font-weight:700;font-size:16px" class="'+(i.h?'st-t':'')+'">'+esc(i.d)+'</div><div class="mut">'+i.cm+' cm a '+i.p+' Bs por metro</div>'+(i.df?'<div style="font-size:13px;font-weight:700;color:var(--brass-text)">Doble forro '+esc(i.c.toLowerCase())+', +'+i.rec+' Bs</div>':'')+'</div><div style="text-align:right"><div class="serif" style="font-size:20px">'+bs(csub(i))+'</div>'+rr+'</div></div>'});
@@ -240,7 +241,7 @@ if(!o.pg.length)b+='<div class="mut">Sin pagos registrados</div>';
 o.pg.forEach(function(x,j){
 var me=x.ef>0&&x.qr>0?'Mixto, ef. '+bs(x.ef)+' y QR '+bs(x.qr):(x.ef>0?'Efectivo':'QR');
 b+='<div class="hrow"><div class="l"><div class="'+(x.x?'st-t':'')+'"><b>'+me+'</b><div class="mut">'+fd(x.d)+(x.x?', anulado: '+esc(x.mot):'')+'</div></div><div style="text-align:right"><div class="serif '+(x.x?'st-t':'')+'" style="font-size:20px">'+bs(x.ef+x.qr)+'</div></div></div>'+
-(x.x?'':'<div class="l" style="margin-top:6px"><label class="ck" style="min-height:36px;font-size:13px"><input type="checkbox" data-a="ver" data-v="'+j+'"'+(x.v?' checked':'')+(own()?'':' disabled')+' style="width:20px;height:20px"> Verificado</label>'+(own()?'<button class="btn o2 sm" style="width:auto;height:40px" data-a="anu" data-v="'+j+'">Anular</button>':'')+'</div>')+'</div>'});
+(x.x?'':'<div class="l" style="margin-top:6px"><label class="ck" style="min-height:36px;font-size:13px"><input type="checkbox" data-a="ver" data-v="'+j+'"'+(x.v?' checked':'')+(own()?'':' disabled')+' style="width:20px;height:20px"> '+(x.qr>0?'Verificado en el banco':'Verificado')+'</label>'+(own()?'<button class="btn o2 sm" style="width:auto;height:40px" data-a="anu" data-v="'+j+'">Anular</button>':'')+'</div>')+'</div>'});
 if(!own()&&o.pg.length)b+='<div class="mut">Solo el dueño verifica y anula pagos.</div>';
 b+='<h2 class="serif h2" style="margin:22px 0 8px"><label for="es">Estado del pedido</label></h2><select id="es" class="fi" data-a="es">'+['En proceso','Listo','Entregado'].concat(own()?['Cancelado']:[]).map(function(x){return '<option'+(x===o.es?' selected':'')+'>'+x+'</option>'}).join('')+'</select>'+
 '<div class="g2" style="margin-top:14px"><button class="btn" data-a="wa">Enviar por WhatsApp</button><button class="btn o2" style="margin-top:0" data-a="pdfped">Descargar PDF</button></div>'+
@@ -258,6 +259,33 @@ h+='<div class="box" style="margin-top:8px"><div class="fld"><label class="lb" f
 (can?'<div id="enverr" class="err"></div><button class="btn" data-a="saveenv">Guardar datos de envío</button>':'<p class="mut" style="margin:10px 0 0">Pedido cancelado: no se pueden cambiar los datos de envío.</p>')+'</div>';
 return h}
 
+/* Editar pedido (solo dueño): cortes y entrega. El total nunca puede quedar por debajo de lo ya pagado. */
+function ecalc(o){var s=NP.items.reduce(function(a,i){return a+nsub(i)},0),e=0;
+if(NP.ent==='envio'&&NP.tro)e=(o.env&&o.env.tro)?o.trv:S.TR;
+return {s:s,e:e,t:s+e,p:paid(o)}}
+function etot(){
+var o=byN(R.id);if(!o||!$('#n3'))return;
+var c=ecalc(o),dif=c.t-c.p,bad=dif<0;
+$('#n1').textContent=bs(c.s);$('#n2').textContent=bs(c.e);$('#n3').textContent=bs(c.t);
+var nb=$('#nb3');if(nb)nb.textContent=bs(c.t);
+var er=$('#nerr');if(er&&!bad)er.textContent='';
+var cn=$('#ncnt');if(cn)cn.textContent=NP.items.length+(NP.items.length===1?' corte':' cortes');
+$('#ep').textContent=bs(c.p);
+$('#es2').textContent=bad?'Menor que lo pagado':bs(dif);
+var fila=$('#esr');fila.style.color=(bad||dif>0)?'var(--hero-bad)':'var(--hero-muted)';fila.style.fontWeight=(bad||dif>0)?'700':'';
+$('#n6').style.display=(!bad&&dif===0&&c.t>0)?'block':'none'}
+function sEditar(){
+var o=byN(R.id);
+if(!o||!NP||!NP.edit||!own()||o.es==='Cancelado'){R.scr=o?'detalle':'pedidos';return o?sDet():sPed()}
+var h=hero({back:'detalle',title:'Editar pedido '+o.n,sub:esc(nom(o))});
+h+='<div class="sheet"><div class="cn narrow nuevo editar" style="max-width:640px">'+
+'<div class="sec"><div class="l" style="margin-bottom:12px"><h2 class="serif h2">Cortes</h2><span class="mut" id="ncnt"></span></div><div id="ni"></div><button class="btn o" data-a="addcut">'+IC.plus+' Agregar corte</button></div>'+
+'<div class="sec"><h2 class="serif h2" style="margin-bottom:12px">Entrega</h2><div class="seg" role="group" aria-label="Tipo de entrega"><button data-a="nent" data-v="retiro" class="'+(NP.ent==='retiro'?'on':'')+'">Retiro en tienda</button><button data-a="nent" data-v="envio" class="'+(NP.ent==='envio'?'on':'')+'">Envío</button></div>';
+if(NP.ent==='envio')h+='<div style="margin-top:12px"><p class="mut" style="margin:0 0 10px;font-size:13px">Estos datos son opcionales. Puedes completarlos después.</p><div class="fld"><label class="lb" for="en">Nombre completo</label><input id="en" class="fi" data-np="en" value="'+esc(NP.en)+'"></div><div class="g2"><div><label class="lb" for="ec">Celular</label><input id="ec" class="fi" inputmode="numeric" data-np="ec" value="'+esc(NP.ec)+'"></div><div><label class="lb" for="ci">Ciudad</label><input id="ci" class="fi" data-np="ci" value="'+esc(NP.ci)+'"></div></div><label class="ck" style="margin-top:8px"><input type="checkbox" id="ntro" data-a="ntro"'+(NP.tro?' checked':'')+'> ¿Es para trópico? (+'+S.TR+' Bs)</label></div>';
+h+='</div>'+
+'<div class="box tot" style="margin-top:18px"><div class="l" style="color:var(--hero-muted)"><span>Cortes</span><span id="n1"></span></div><div class="l" style="color:var(--hero-muted)"><span>Envío trópico</span><span id="n2"></span></div><div class="l" style="border-top:1px solid rgba(255,255,255,.2);margin-top:8px;padding-top:10px;align-items:baseline"><b style="color:var(--gold)">Total nuevo</b><span class="serif" style="font-size:44px;line-height:1.05" id="n3"></span></div><div class="l" style="color:var(--hero-muted);margin-top:8px"><span>Ya pagado</span><span id="ep"></span></div><div class="l" id="esr" style="color:var(--hero-muted)"><span>Saldo pendiente</span><span id="es2"></span></div><div id="n6" style="display:none;font-weight:700;margin-top:4px">Pedido pagado por completo</div><div style="font-size:12px;color:var(--hero-muted);margin:6px 0 0">Cada corte se redondea hacia arriba a Bs enteros. El total no puede quedar menor que lo ya pagado.</div></div>'+
+'<div class="nbar"><div id="nerr" class="err" role="alert"></div><div class="nbar-in"><div class="nbar-t"><span class="mut">Total</span><b class="serif" id="nb3"></b></div><button class="btn" data-a="saveedit">Guardar cambios</button></div></div></div></div>';
+return h}
 function resetNP(){NP={cel:'',items:[{d:0,cm:'',p:'',df:0,c:''}],ent:'retiro',en:'',ec:'',ci:'',tro:0,pm:'Efectivo',ad:'',ae:'',aq:''}}
 /* Números del formulario: aceptan coma o punto, máximo 2 decimales; siempre se normalizan con punto */
 function dnum(s){var t=String(s==null?'':s).trim();if(t==='')return {v:0,e:''};
@@ -266,8 +294,8 @@ if(/^\d*[.,]\d{3,}$/.test(t))return {v:0,e:'Usa máximo 2 decimales'};
 return {v:0,e:'Escribe un número válido, por ejemplo 80,5'}}
 function pn(s){return dnum(s).v}
 function fe(s){return dnum(s).e}
-function nsub(i){return csub({cm:pn(i.cm),p:pn(i.p),df:i.df,rec:S.DF})}
-function nraw(i){return craw({cm:pn(i.cm),p:pn(i.p),df:i.df,rec:S.DF})}
+function nsub(i){return csub({cm:pn(i.cm),p:pn(i.p),df:i.df,rec:(i.rec!=null?i.rec:S.DF)})}
+function nraw(i){return craw({cm:pn(i.cm),p:pn(i.p),df:i.df,rec:(i.rec!=null?i.rec:S.DF)})}
 function ntotal(){return NP.items.reduce(function(a,i){return a+nsub(i)},0)+(NP.ent==='envio'&&NP.tro?S.TR:0)}
 /* Adelanto: solo Bs enteros. Devuelve efectivo, QR y un mensaje de error (vacío si todo está bien) */
 function adel(){
@@ -312,6 +340,7 @@ h+='<div class="box"><div class="cut-h"><b>Corte '+(k+1)+'</b></div><div style="
 '<div class="l" style="border-top:1px solid var(--line);margin-top:10px;padding-top:10px;align-items:baseline"><span class="mut">Subtotal</span><span><span id="nr'+k+'">'+rr+'</span><span class="serif" style="font-size:24px" id="ns'+k+'">'+bs(nsub(it))+'</span></span></div></div>'});
 $('#ni').innerHTML=h;ntot()}
 function ntot(){
+if(NP&&NP.edit){etot();return}
 var s=NP.items.reduce(function(a,i){return a+nsub(i)},0),e=NP.ent==='envio'&&NP.tro?S.TR:0,t=s+e;
 $('#n1').textContent=bs(s);$('#n2').textContent=bs(e);$('#n3').textContent=bs(t);var nb=$('#nb3');if(nb)nb.textContent=bs(t);var c=$('#ncnt');if(c)c.textContent=NP.items.length+(NP.items.length===1?' corte':' cortes');
 var a=adel(),ad=a.ef+a.qr,txt='',rojo=false,pagado=false;
@@ -370,7 +399,7 @@ var list='';
 if(hv==='pagos'){var rows=[];D.pg.forEach(function(r){var a=R.hm==='ef'?r.p.ef:R.hm==='qr'?r.p.qr:r.p.ef+r.p.qr;if(a>0)rows.push({d:r.p.d,r:r,a:a})});
 grp(rows).forEach(function(g){var s=g[1].reduce(function(a,x){return a+(x.r.p.x?0:x.a)},0);list+='<div class="dh"><span>'+lab(g[0])+'</span><span class="serif" style="font-size:22px">'+bs(s)+'</span></div>';
 g[1].forEach(function(x){var p=x.r.p,m=p.ef>0&&p.qr>0?'Mixto, ef. '+bs(p.ef)+' y QR '+bs(p.qr):p.ef>0?'Efectivo':'QR';
-list+='<div class="hrow"><div class="l"><div class="'+(p.x?'st-t':'')+'"><b>'+esc(nom(x.r.o))+'</b><div class="mut">Pedido '+x.r.o.n+', '+m+(p.x?', anulado':'')+'</div></div><div style="text-align:right"><div class="serif '+(p.x?'st-t':'')+'" style="font-size:20px">'+bs(x.a)+'</div>'+(p.x?'':(p.v?'<span class="good" style="font-size:12px">Verificado</span>':'<span class="chip c-warn">Sin verificar</span>'))+'</div></div></div>'})})}
+list+='<div class="hrow"><div class="l"><div class="'+(p.x?'st-t':'')+'"><b>'+esc(nom(x.r.o))+'</b><div class="mut">Pedido '+x.r.o.n+', '+m+(p.x?', anulado':'')+'</div></div><div style="text-align:right"><div class="serif '+(p.x?'st-t':'')+'" style="font-size:20px">'+bs(x.a)+'</div>'+(p.x?'':(p.v?'<span class="good" style="font-size:12px">'+(p.qr>0?'Verificado en el banco':'Verificado')+'</span>':'<span class="chip c-warn">'+(p.qr>0?'QR sin verificar':'Sin verificar')+'</span>'))+'</div></div></div>'})})}
 else if(hv==='ventas'){grp(D.pv.map(function(o){return {d:o.reg,o:o}})).forEach(function(g){var s=g[1].reduce(function(a,x){return a+tot(x.o)},0);list+='<div class="dh"><span>'+lab(g[0])+'</span><span class="serif" style="font-size:22px">'+bs(s)+'</span></div>';
 g[1].forEach(function(x){var q=sal(x.o);list+='<div class="hrow"><div class="l"><div><b>'+esc(nom(x.o))+'</b><div class="mut">Pedido '+x.o.n+'</div></div><div style="text-align:right"><div class="serif" style="font-size:20px">'+bs(tot(x.o))+'</div>'+(q>0?'<span class="debt">Debe '+bs(q)+'</span>':'<span class="good" style="font-size:12px">Pagado</span>')+'</div></div></div>'})})}
 else if(hv==='entregas'){grp(D.en.map(function(o){return {d:o.ent,o:o}})).forEach(function(g){list+='<div class="dh"><span>'+lab(g[0])+'</span><span>'+g[1].length+(g[1].length===1?' entrega':' entregas')+'</span></div>';
@@ -422,7 +451,7 @@ return hero({back:'mas',title:'Accesos'})+'<div class="sheet"><div class="cn nar
 '<div class="sec"><h2 class="serif h2" style="margin-bottom:10px">Historial de accesos</h2>'+(ac||'<p class="mut">Todavía no hay accesos registrados.</p>')+'</div></div></div>'}
 
 function navHtml(){
-var cur=R.scr;if(cur==='detalle')cur='pedidos';if(['saldos','clave','ajustes','accesos'].indexOf(cur)>=0)cur='mas';
+var cur=R.scr;if(cur==='detalle'||cur==='editar')cur='pedidos';if(['saldos','clave','ajustes','accesos'].indexOf(cur)>=0)cur='mas';
 var it=[['pedidos','Pedidos',IC.ped],['nuevo','Nuevo',IC.nue],['cortes','Cortes',IC.cor],['historial','Historial',IC.his],['mas','Más',IC.mas]];
 return '<div class="navlogo"><span class="mono">JY</span><span class="serif" style="font-size:25px">Telas JY</span></div>'+it.map(function(i){return '<button data-a="go" data-v="'+i[0]+'" class="'+(cur===i[0]?'on':'')+'"'+(cur===i[0]?' aria-current="page"':'')+'>'+i[2]+'<span>'+i[1]+'</span></button>'}).join('')}
 
@@ -431,15 +460,15 @@ if(!R.role&&R.scr!=='login'&&R.scr!=='fuera')R.scr='login';
 if(!own()&&(R.scr==='ajustes'||R.scr==='accesos'))R.scr='mas';
 var nav=$('#nav');
 if(R.scr==='login'||R.scr==='fuera'){nav.style.display='none'}else{nav.style.display='';nav.innerHTML=navHtml()}
-var fn={login:sLogin,fuera:sFuera,pedidos:sPed,detalle:sDet,nuevo:sNuevo,cortes:sCortes,historial:sHist,mas:sMas,saldos:sSaldos,clave:sClave,ajustes:sAjustes,accesos:sAccesos}[R.scr];
+var fn={login:sLogin,fuera:sFuera,pedidos:sPed,detalle:sDet,nuevo:sNuevo,cortes:sCortes,historial:sHist,mas:sMas,saldos:sSaldos,clave:sClave,ajustes:sAjustes,accesos:sAccesos,editar:sEditar}[R.scr];
 var av='';
 if(R.role==='vend'&&R.est&&R.est.segundos_restantes!=null&&R.est.segundos_restantes<=600){var mn=Math.max(1,Math.ceil(R.est.segundos_restantes/60));av='<div class="aviso" role="alert">Tu horario termina en '+mn+(mn===1?' minuto':' minutos')+'. Termina lo que estás haciendo.</div>'}
 var ap=$('#app');ap.dataset.scr=R.scr;ap.classList.toggle('enter',draw.p!==undefined&&draw.p!==R.scr);draw.p=R.scr;
 ap.innerHTML=av+fn();
 if(R.scr==='pedidos')drawPedList();
-if(R.scr==='nuevo')rn();
+if(R.scr==='nuevo'||R.scr==='editar')rn();
 }
-function go(s){R.scr=s;R.envdirty=0;if(s==='nuevo')resetNP();draw();window.scrollTo(0,0);if(s==='nuevo'){var c=$('#cel');if(c)c.focus({preventScroll:true})}}
+function go(s){if(NP&&NP.edit)NP=null;S.designs=S.designs.filter(function(d){return !d.extra});R.scr=s;R.envdirty=0;if(s==='nuevo')resetNP();draw();window.scrollTo(0,0);if(s==='nuevo'){var c=$('#cel');if(c)c.focus({preventScroll:true})}}
 
 /* ---------- PDF y WhatsApp ---------- */
 function pdf(titulo,filas,archivo){
@@ -571,6 +600,29 @@ if(r){await cargarAccesos();draw()}},
 saveclave:async function(){var a=$('#k1').value,b=$('#k2').value,er=$('#kerr');if(a.length<8){er.textContent='La contraseña necesita al menos 8 caracteres';return}if(a!==b){er.textContent='Las contraseñas no coinciden';return}
 var r=await run(function(){return sb.auth.updateUser({password:a})},'Contraseña actualizada');if(r)go('mas')},
 pdfped:function(){var o=byN(R.id);if(o)pdfPedido(o)},
+edit:function(){var o=byN(R.id);if(!o||!own()||o.es==='Cancelado')return;
+S.designs=S.designs.filter(function(d){return !d.extra});
+var its=o.it.map(function(i){var k=-1;for(var j=0;j<S.designs.length;j++){if(S.designs[j].n===i.d){k=j;break}}
+if(k<0){S.designs.push({id:-1,n:i.d,pat:'liso',col:'#9AA0B0',extra:1});k=S.designs.length-1}
+return {id:i.id,d:k,cm:String(i.cm),p:String(i.p),df:i.df,c:i.c,rec:i.df?i.rec:null}});
+NP={edit:1,items:its,ent:o.env?'envio':'retiro',en:o.env?o.env.nom:'',ec:o.env?o.env.cel:'',ci:o.env?o.env.ciu:'',tro:o.env&&o.env.tro?1:0};
+R.scr='editar';draw();window.scrollTo(0,0)},
+saveedit:async function(){
+var o=byN(R.id),er=$('#nerr');if(!o||!NP||!NP.edit||!own())return;
+for(var k=0;k<NP.items.length;k++){var i=NP.items[k];
+if(fe(i.cm)){er.textContent='Corte '+(k+1)+', medida: '+fe(i.cm);return}
+if(fe(i.p)){er.textContent='Corte '+(k+1)+', costo por metro: '+fe(i.p);return}
+if(!(pn(i.cm)>0)){er.textContent='El corte '+(k+1)+' necesita una medida mayor a 0';return}
+if(!(pn(i.p)>0)){er.textContent='El corte '+(k+1)+' necesita el costo por metro';return}
+if(i.df&&!String(i.c||'').trim()){er.textContent='Indica el color del doble forro del corte '+(k+1);return}}
+var c=ecalc(o);
+if(c.t<c.p){er.textContent='El total ('+bs(c.t)+') no puede ser menor que lo ya pagado ('+bs(c.p)+'). Primero anula un pago.';return}
+er.textContent='';
+var payload={id:o.id,entrega:NP.ent,envio_nombre:NP.ent==='envio'?NP.en.trim():null,envio_celular:NP.ent==='envio'?NP.ec.trim():null,envio_ciudad:NP.ent==='envio'?NP.ci.trim():null,tropico:NP.ent==='envio'&&!!NP.tro,
+items:NP.items.map(function(i){return {id:i.id||null,diseno:S.designs[i.d].n,cm:pn(i.cm),precio_metro:pn(i.p),doble_forro:!!i.df,color_forro:String(i.c||'').trim()}})};
+var r=await run(function(){return sb.rpc('editar_pedido',{p:payload})},'Pedido actualizado');
+if(!r)return;
+NP=null;R.scr='detalle';await recargar();window.scrollTo(0,0)},
 delp:function(){var o=byN(R.id);if(!o||!own())return;
 var pgs=o.pg.reduce(function(a,p){return a+(p.x?0:p.ef+p.qr)},0);
 ask({title:'¿Eliminar el pedido '+o.n+'?',text:o.pg.length?'Tiene '+o.pg.length+(o.pg.length===1?' pago registrado':' pagos registrados')+' ('+bs(pgs)+'). Se borra todo: el pedido, sus cortes y sus pagos. No se puede deshacer.':'Se borra por completo, con sus cortes. No se puede deshacer.',ok:'Eliminar pedido',danger:1,fn:async function(){

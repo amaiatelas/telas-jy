@@ -84,6 +84,16 @@ Solo dos cuentas: dueño y vendedora. Sin registro público.
 - Avance de cortes como "Cortes X de Y". Al terminar todos, aviso "¿Marcar como listo?". [HECHO]
 - Saldo pendiente siempre muy visible en rojo ("Debe X Bs"), también en pedidos entregados. [HECHO]
 
+## Editar pedidos
+- Solo el dueño ve "Editar pedido" (en el detalle, junto a Cortes). No se puede editar un pedido cancelado. [HECHO]
+- Se editan los cortes (diseño, medida, costo por metro, doble forro y color; agregar y quitar) y la entrega (retiro o envío, datos de envío y trópico). No se editan los datos del cliente. [HECHO]
+- El total nuevo nunca puede quedar menor que lo ya pagado: se bloquea y avisa que primero hay que anular un pago. Lo valida la base de datos (función editar_pedido). [HECHO]
+- Los cortes que siguen conservan su estado "hecho" y el recargo de doble forro con el que se crearon. [HECHO]
+
+## Comprobante verificado en el banco
+- El dueño verifica cada pago manualmente en su banco y marca "Verificado en el banco" (pagos con QR) o "Verificado" (efectivo). Sin foto ni número de operación. [HECHO]
+- En la lista de pedidos, el dueño ve "QR sin verificar en el banco" mientras falte alguna verificación. [HECHO]
+
 ## Eliminar pedidos
 - Solo el dueño ve el botón "Eliminar pedido" (al final del detalle) y la base de datos también lo exige.
 - Pide confirmación y borra el pedido con sus cortes. No se puede deshacer. [HECHO]
