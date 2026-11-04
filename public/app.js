@@ -157,7 +157,7 @@ out:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="current
 function hero(o){
 var top=o.back?'<button class="ib" data-a="go" data-v="'+o.back+'" aria-label="Volver">'+IC.back+'</button>':'<div class="brand"><span class="mono">JY</span><span class="serif" style="font-size:22px">Telas JY</span></div>';
 var right=o.right!==undefined?o.right:'<span class="rolechip">'+(own()?'Dueño':'Vendedora')+'</span>';
-var h='<header class="hero"><div class="cn"><div class="htop">'+top+'<div>'+right+'</div></div>';
+var h='<header class="hero"><div class="cn"><div class="htop">'+top+'<div class="hright">'+right+'<button class="ib lo" data-a="logout" aria-label="Cerrar sesión">'+IC.out+'<span>Cerrar sesión</span></button></div></div>';
 if(o.title)h+='<div class="serif ht">'+o.title+'</div>';
 if(o.big)h+='<div class="serif big'+(o.debt?' dbt':'')+'">'+o.big+'</div>';
 if(o.kick)h+='<div class="kick">'+o.kick+'</div>';
