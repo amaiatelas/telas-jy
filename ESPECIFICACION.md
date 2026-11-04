@@ -45,7 +45,7 @@ Solo dos cuentas: dueño y vendedora. Sin registro público.
 - Entrega: retiro en tienda o envío. Envío (a cualquier destino): nombre completo, celular y
   ciudad, los tres OPCIONALES al crear el pedido ("Puedes completarlos después"); si es para
   trópico se suman 20 Bs. Nada más (sin departamento, transporte ni guía). [HECHO]
-- Fecha de entrega (por defecto, 2 días después). [HECHO]
+- No se pide fecha de entrega. La base de datos la exige, así que se guarda la fecha de hoy sin mostrarla. [HECHO]
 - Medida (cm) y costo por metro aceptan coma o punto (80,5 u 80.5), con máximo 2 decimales;
   si hay más, mensaje rojo "Usa máximo 2 decimales". Lo que se calcula en pantalla y lo que se
   envía es el mismo número normalizado con punto. [HECHO]
@@ -83,7 +83,6 @@ Solo dos cuentas: dueño y vendedora. Sin registro público.
 - Estados: En proceso (automático), Listo, Entregado, Cancelado (solo dueño). [HECHO]
 - Avance de cortes como "Cortes X de Y". Al terminar todos, aviso "¿Marcar como listo?". [HECHO]
 - Saldo pendiente siempre muy visible en rojo ("Debe X Bs"), también en pedidos entregados. [HECHO]
-- "Atrasado" si pasó la fecha de entrega y no está entregado ni cancelado. [HECHO]
 
 ## Pagos
 
