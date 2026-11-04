@@ -236,7 +236,11 @@ begin
   return e;
 end $$;
 
--- Crea un pedido completo (cliente + pedido + cortes) en un solo paso
+-- Crea un pedido completo (cliente + pedido + cortes + adelanto opcional) en un solo paso.
+-- El adelanto llega en pago_efectivo y pago_qr (Bs enteros, opcionales). Si es mayor que 0
+-- se guarda como un pago del pedido; el trigger de pagos aplica las reglas de siempre
+-- (no supera el saldo, nace sin verificar, fecha y autor los pone la base de datos).
+-- Si algo falla, no se guarda ni el pedido ni el pago.
 create or replace function public.crear_pedido(p jsonb)
 returns integer language plpgsql as $$
 declare
@@ -246,6 +250,8 @@ declare
   i smallint := 0;
   v_cel text := trim(p->>'celular');
   v_nom text := trim(p->>'nombre');
+  v_ef integer := 0;
+  v_qr integer := 0;
 begin
   if coalesce(v_cel, '') = '' or coalesce(v_nom, '') = '' then
     raise exception 'Faltan los datos del cliente';
@@ -253,6 +259,12 @@ begin
   if jsonb_array_length(coalesce(p->'items', '[]'::jsonb)) = 0 then
     raise exception 'El pedido necesita al menos un corte';
   end if;
+  if coalesce(p->>'pago_efectivo', '0') !~ '^[0-9]{1,9}$'
+     or coalesce(p->>'pago_qr', '0') !~ '^[0-9]{1,9}$' then
+    raise exception 'El adelanto debe ser un número entero de Bs';
+  end if;
+  v_ef := coalesce(p->>'pago_efectivo', '0')::integer;
+  v_qr := coalesce(p->>'pago_qr', '0')::integer;
 
   insert into public.clientes (celular, nombre) values (v_cel, v_nom)
   on conflict (celular) do update set nombre = excluded.nombre;
@@ -279,6 +291,10 @@ begin
       nullif(trim(it->>'color_forro'), '')
     );
   end loop;
+
+  if v_ef + v_qr > 0 then
+    insert into public.pagos (pedido_id, efectivo, qr) values (v_id, v_ef, v_qr);
+  end if;
 
   return v_num;
 end $$;

@@ -38,6 +38,16 @@ Solo dos cuentas: dueño y vendedora. Sin registro público.
 - Entrega: retiro en tienda o envío. Envío (a cualquier destino): nombre completo, celular y
   ciudad; si es para trópico se suman 20 Bs. Nada más (sin departamento, transporte ni guía). [HECHO]
 - Fecha de entrega (por defecto, 2 días después). [HECHO]
+- Medida (cm) y costo por metro aceptan coma o punto (80,5 u 80.5), con máximo 2 decimales;
+  si hay más, mensaje rojo "Usa máximo 2 decimales". Lo que se calcula en pantalla y lo que se
+  envía es el mismo número normalizado con punto. [HECHO]
+- Adelanto opcional (entre Entrega y el total): método Efectivo, QR o Mixto, monto en Bs enteros,
+  botón "Paga todo" (en Mixto pone el total en Efectivo). En el cuadro del total se ve el
+  adelanto y el saldo pendiente en vivo; con saldo 0 y total mayor que 0 dice "Pedido pagado
+  por completo". Validación: entero, sin negativos, sin superar el total; 0 o vacío no crea
+  pago. El pago se guarda junto con el pedido en `crear_pedido` (campos `pago_efectivo` y
+  `pago_qr`), todo en una sola operación: si algo falla no se crea ni el pedido ni el pago.
+  El pago nace sin verificar y la base pone la fecha y el autor. [HECHO]
 - Solo el dueño agrega diseños a la lista; la vendedora solo elige. [HECHO]
 
 ## Estados y saldo

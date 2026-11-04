@@ -241,9 +241,32 @@ b+='<h2 class="serif h2" style="margin:22px 0 8px"><label for="es">Estado del pe
 '<div class="g2" style="margin-top:14px"><button class="btn o2" data-a="pdfped">Descargar PDF</button><button class="btn o2" style="margin-top:0" data-a="wa">Enviar por WhatsApp</button></div></div></div>';
 return h+b}
 
-function resetNP(){NP={cel:'',nom:'',items:[{d:0,cm:'',p:'',df:0,c:''}],ent:'retiro',en:'',ec:'',ci:'',tro:0,f:addDays(today(),2)}}
-function nsub(i){var cm=parseFloat(i.cm)||0,p=parseFloat(i.p)||0;return csub({cm:cm,p:p,df:i.df,rec:S.DF})}
-function nraw(i){return craw({cm:parseFloat(i.cm)||0,p:parseFloat(i.p)||0,df:i.df,rec:S.DF})}
+function resetNP(){NP={cel:'',nom:'',items:[{d:0,cm:'',p:'',df:0,c:''}],ent:'retiro',en:'',ec:'',ci:'',tro:0,f:addDays(today(),2),pm:'Efectivo',ad:'',ae:'',aq:''}}
+/* Números del formulario: aceptan coma o punto, máximo 2 decimales; siempre se normalizan con punto */
+function dnum(s){var t=String(s==null?'':s).trim();if(t==='')return {v:0,e:''};
+if(/^(\d+([.,]\d{0,2})?|[.,]\d{1,2})$/.test(t))return {v:parseFloat(t.replace(',','.')),e:''};
+if(/^\d*[.,]\d{3,}$/.test(t))return {v:0,e:'Usa máximo 2 decimales'};
+return {v:0,e:'Escribe un número válido, por ejemplo 80,5'}}
+function pn(s){return dnum(s).v}
+function fe(s){return dnum(s).e}
+function nsub(i){return csub({cm:pn(i.cm),p:pn(i.p),df:i.df,rec:S.DF})}
+function nraw(i){return craw({cm:pn(i.cm),p:pn(i.p),df:i.df,rec:S.DF})}
+function ntotal(){return NP.items.reduce(function(a,i){return a+nsub(i)},0)+(NP.ent==='envio'&&NP.tro?S.TR:0)}
+/* Adelanto: solo Bs enteros. Devuelve efectivo, QR y un mensaje de error (vacío si todo está bien) */
+function adel(){
+var campos=NP.pm==='Mixto'?[NP.ae,NP.aq]:[NP.ad],v=[];
+for(var k=0;k<campos.length;k++){var t=String(campos[k]||'').trim();
+if(t==='')v.push(0);
+else if(/^\d{1,9}$/.test(t))v.push(+t);
+else return {ef:0,qr:0,err:/^-/.test(t)?'El adelanto no puede ser negativo':'El adelanto debe ser un número entero de Bs, sin decimales'}}
+if(NP.pm==='Mixto')return {ef:v[0],qr:v[1],err:''};
+return NP.pm==='QR'?{ef:0,qr:v[0],err:''}:{ef:v[0],qr:0,err:''}}
+function secAdelanto(){
+var mix=NP.pm==='Mixto';
+var met=['Efectivo','QR','Mixto'].map(function(x){return '<button data-a="npm" data-v="'+x+'" class="'+(NP.pm===x?'on':'')+'">'+x+'</button>'}).join('');
+var campo=mix?'<div class="g2"><div><label class="lb" for="ae">Efectivo (Bs)</label><input id="ae" class="fi" inputmode="numeric" data-np="ae" value="'+esc(NP.ae)+'" placeholder="0"></div><div><label class="lb" for="aq">QR (Bs)</label><input id="aq" class="fi" inputmode="numeric" data-np="aq" value="'+esc(NP.aq)+'" placeholder="0"></div></div><button class="btn o sm" style="width:auto;margin:8px 0 0" data-a="npall">Paga todo</button>'
+:'<div style="display:flex;gap:8px;align-items:flex-end"><div style="flex:1;min-width:0"><label class="lb" for="ad">Monto (Bs)</label><input id="ad" class="fi" inputmode="numeric" data-np="ad" value="'+esc(NP.ad)+'" placeholder="0"></div><button class="btn o sm" style="width:auto;margin:0;height:50px" data-a="npall">Paga todo</button></div>';
+return '<div class="sec"><h2 class="serif h2" style="margin-bottom:4px">Adelanto</h2><p class="mut" style="margin:0 0 12px">Déjalo en 0 si todavía no pagó</p><div class="seg" role="group" aria-label="Método del adelanto" style="margin-bottom:12px">'+met+'</div>'+campo+'</div>'}
 function sNuevo(){
 if(!NP)resetNP();
 var reg=NP.cel.trim().length>=7&&S.orders.some(function(o){return o.cel===NP.cel.trim()});
@@ -256,7 +279,7 @@ h+='<div class="sheet"><div class="cn narrow" style="max-width:640px">'+
 '<div class="sec"><h2 class="serif h2" style="margin-bottom:12px">Entrega</h2><div class="seg" role="group" aria-label="Tipo de entrega"><button data-a="nent" data-v="retiro" class="'+(NP.ent==='retiro'?'on':'')+'">Retiro en tienda</button><button data-a="nent" data-v="envio" class="'+(NP.ent==='envio'?'on':'')+'">Envío</button></div>';
 if(NP.ent==='envio')h+='<div style="margin-top:12px"><div class="fld"><label class="lb" for="en">Nombre completo</label><input id="en" class="fi" data-np="en" value="'+esc(NP.en)+'"></div><div class="g2"><div><label class="lb" for="ec">Celular</label><input id="ec" class="fi" inputmode="numeric" data-np="ec" value="'+esc(NP.ec)+'"></div><div><label class="lb" for="ci">Ciudad</label><input id="ci" class="fi" data-np="ci" value="'+esc(NP.ci)+'"></div></div><label class="ck" style="margin-top:8px"><input type="checkbox" id="ntro" data-a="ntro"'+(NP.tro?' checked':'')+'> ¿Es para trópico? (+'+S.TR+' Bs)</label></div>';
 h+='<div class="fld" style="margin-top:12px"><label class="lb" for="nf">Fecha de entrega</label><input id="nf" type="date" class="fi" data-np="f" value="'+NP.f+'"></div></div>'+
-'<div class="box" style="background:var(--hero);color:#fff;border:none;margin-top:18px"><div class="l" style="color:var(--hero-muted)"><span>Cortes</span><span id="n1"></span></div><div class="l" style="color:var(--hero-muted)"><span>Envío trópico</span><span id="n2"></span></div><div class="l" style="border-top:1px solid rgba(255,255,255,.2);margin-top:8px;padding-top:10px;align-items:baseline"><b style="color:#D8B76E">Total</b><span class="serif" style="font-size:44px;line-height:1.05" id="n3"></span></div><div style="font-size:12px;color:var(--hero-muted);margin:6px 0 12px">Cada corte se redondea hacia arriba a Bs enteros.</div><div id="nerr" class="err" style="color:#FFB3AD"></div><button class="btn b" data-a="savep">Guardar pedido</button></div></div></div>';
+secAdelanto()+'<div class="box" style="background:var(--hero);color:#fff;border:none;margin-top:18px"><div class="l" style="color:var(--hero-muted)"><span>Cortes</span><span id="n1"></span></div><div class="l" style="color:var(--hero-muted)"><span>Envío trópico</span><span id="n2"></span></div><div class="l" style="border-top:1px solid rgba(255,255,255,.2);margin-top:8px;padding-top:10px;align-items:baseline"><b style="color:#D8B76E">Total</b><span class="serif" style="font-size:44px;line-height:1.05" id="n3"></span></div><div class="l" style="color:var(--hero-muted);margin-top:8px"><span>Adelanto</span><span id="n4"></span></div><div class="l" id="n5r" style="color:var(--hero-muted)"><span>Saldo pendiente</span><span id="n5"></span></div><div id="n6" style="display:none;font-weight:700;margin-top:4px">Pedido pagado por completo</div><div style="font-size:12px;color:var(--hero-muted);margin:6px 0 12px">Cada corte se redondea hacia arriba a Bs enteros.</div><div id="nerr" class="err" style="color:#FFB3AD"></div><button class="btn b" data-a="savep">Guardar pedido</button></div></div></div>';
 return h}
 function rn(){
 if(!$('#ni'))return;
@@ -265,14 +288,23 @@ NP.items.forEach(function(it,k){
 var raw=nraw(it),rr=raw!==Math.round(raw)?'<span style="font-size:12px;font-weight:400;color:var(--muted)">'+raw.toFixed(2).replace('.',',')+' redondeado </span>':'';
 var dn=S.designs[it.d]?S.designs[it.d].n:'';
 h+='<div class="box"><div style="display:flex;gap:10px;align-items:flex-end;margin-bottom:12px">'+sw(dn,50)+'<div style="flex:1"><label class="lb" for="d'+k+'">Diseño</label><select id="d'+k+'" class="fi" data-a="nd" data-k="'+k+'">'+S.designs.map(function(d,j){return '<option value="'+j+'"'+(j===it.d?' selected':'')+'>'+esc(d.n)+'</option>'}).join('')+'</select></div><button class="btn o2" style="width:50px;height:50px;padding:0;margin:0" data-a="delcut" data-v="'+k+'" aria-label="Quitar corte '+(k+1)+'">'+IC.trash+'</button></div>'+
-'<div class="g2"><div><label class="lb" for="c'+k+'">Medida (cm)</label><input id="c'+k+'" class="fi" inputmode="decimal" data-ni="'+k+'" data-f="cm" value="'+esc(it.cm)+'" placeholder="80"></div><div><label class="lb" for="p'+k+'">Costo por metro (Bs)</label><input id="p'+k+'" class="fi" inputmode="decimal" data-ni="'+k+'" data-f="p" value="'+esc(it.p)+'" placeholder="45"></div></div>'+
+'<div class="g2"><div><label class="lb" for="c'+k+'">Medida (cm)</label><input id="c'+k+'" class="fi" inputmode="decimal" data-ni="'+k+'" data-f="cm" value="'+esc(it.cm)+'" placeholder="80"><div class="err" id="ecm'+k+'">'+fe(it.cm)+'</div></div><div><label class="lb" for="p'+k+'">Costo por metro (Bs)</label><input id="p'+k+'" class="fi" inputmode="decimal" data-ni="'+k+'" data-f="p" value="'+esc(it.p)+'" placeholder="45"><div class="err" id="epr'+k+'">'+fe(it.p)+'</div></div></div>'+
 '<label class="ck" style="margin-top:6px"><input type="checkbox" data-a="ndf" data-k="'+k+'"'+(it.df?' checked':'')+'> Doble forro (+'+S.DF+' Bs)</label>'+
 (it.df?'<div class="fld" style="margin-top:6px"><label class="lb" for="col'+k+'">Color del forro</label><input id="col'+k+'" class="fi" data-ni="'+k+'" data-f="c" value="'+esc(it.c)+'" placeholder="Negro"></div>':'')+
 '<div class="l" style="border-top:1px solid var(--line);margin-top:10px;padding-top:10px;align-items:baseline"><span class="mut">Subtotal</span><span><span id="nr'+k+'">'+rr+'</span><span class="serif" style="font-size:24px" id="ns'+k+'">'+bs(nsub(it))+'</span></span></div></div>'});
 $('#ni').innerHTML=h;ntot()}
 function ntot(){
-var s=NP.items.reduce(function(a,i){return a+nsub(i)},0),e=NP.ent==='envio'&&NP.tro?S.TR:0;
-$('#n1').textContent=bs(s);$('#n2').textContent=bs(e);$('#n3').textContent=bs(s+e);var c=$('#ncnt');if(c)c.textContent=NP.items.length+(NP.items.length===1?' corte':' cortes')}
+var s=NP.items.reduce(function(a,i){return a+nsub(i)},0),e=NP.ent==='envio'&&NP.tro?S.TR:0,t=s+e;
+$('#n1').textContent=bs(s);$('#n2').textContent=bs(e);$('#n3').textContent=bs(t);var c=$('#ncnt');if(c)c.textContent=NP.items.length+(NP.items.length===1?' corte':' cortes');
+var a=adel(),ad=a.ef+a.qr,txt='',rojo=false,pagado=false;
+if(a.err)txt='—';
+else if(ad>t){txt='Supera el total';rojo=true}
+else if(t>0&&ad===t)pagado=true;
+else{txt=bs(t-ad);rojo=t-ad>0}
+$('#n4').textContent=a.err?'—':bs(ad);
+$('#n5').textContent=txt;
+var fila=$('#n5r');fila.style.display=pagado?'none':'';fila.style.color=rojo?'#FFB3AD':'var(--hero-muted)';fila.style.fontWeight=rojo?'700':'';
+$('#n6').style.display=pagado?'block':'none'}
 
 function sCortes(){
 var g={};S.designs.forEach(function(d){g[d.n]=[]});
@@ -473,6 +505,10 @@ listo:async function(){var o=byN(R.id);var r=await run(function(){return sb.from
 addcut:function(){NP.items.push({d:0,cm:'',p:'',df:0,c:''});rn()},
 delcut:function(e){if(NP.items.length>1){NP.items.splice(+e.dataset.v,1);rn()}else $('#nerr').textContent='El pedido necesita al menos un corte'},
 nent:function(e){NP.ent=e.dataset.v;draw()},
+npm:function(e){NP.pm=e.dataset.v;draw()},
+npall:function(){var t=ntotal(),er=$('#nerr');if(!(t>0)){er.textContent='Primero completa los cortes para saber el total';return}er.textContent='';
+if(NP.pm==='Mixto'){NP.ae=String(t);NP.aq='0';$('#ae').value=NP.ae;$('#aq').value=NP.aq}else{NP.ad=String(t);$('#ad').value=NP.ad}
+ntot()},
 savep:function(){return savep()},
 rall:function(e){$('#rmon').value=e.dataset.v},
 rret:function(){var v=$('#rmon').value.trim(),er=$('#rerr');if(!/^\d+$/.test(v)||+v<=0){er.textContent='Ingresa un monto entero mayor a 0';return}er.textContent='';
@@ -519,13 +555,19 @@ if(!S.designs.length){er.textContent='Primero agrega diseños en Ajustes';return
 if(cel.length<7){er.textContent='Ingresa el celular del cliente';return}
 if(!nom){er.textContent='Ingresa el nombre del cliente';return}
 for(var k=0;k<NP.items.length;k++){var i=NP.items[k];
-if(!(parseFloat(i.cm)>0)){er.textContent='El corte '+(k+1)+' necesita una medida mayor a 0';return}
-if(!(parseFloat(i.p)>0)){er.textContent='El corte '+(k+1)+' necesita el costo por metro';return}
+if(fe(i.cm)){er.textContent='Corte '+(k+1)+', medida: '+fe(i.cm);return}
+if(fe(i.p)){er.textContent='Corte '+(k+1)+', costo por metro: '+fe(i.p);return}
+if(!(pn(i.cm)>0)){er.textContent='El corte '+(k+1)+' necesita una medida mayor a 0';return}
+if(!(pn(i.p)>0)){er.textContent='El corte '+(k+1)+' necesita el costo por metro';return}
 if(i.df&&!i.c.trim()){er.textContent='Indica el color del doble forro del corte '+(k+1);return}}
 if(NP.ent==='envio'&&(!NP.en.trim()||!NP.ec.trim()||!NP.ci.trim())){er.textContent='El envío necesita nombre completo, celular y ciudad';return}
+var a=adel();
+if(a.err){er.textContent=a.err;return}
+var tt=ntotal();
+if(a.ef+a.qr>tt){er.textContent='El adelanto no puede superar el total ('+bs(tt)+')';return}
 er.textContent='';
-var payload={celular:cel,nombre:nom,entrega:NP.ent,envio_nombre:NP.ent==='envio'?NP.en.trim():null,envio_celular:NP.ent==='envio'?NP.ec.trim():null,envio_ciudad:NP.ent==='envio'?NP.ci.trim():null,tropico:NP.ent==='envio'&&!!NP.tro,fecha_entrega:NP.f||addDays(today(),2),
-items:NP.items.map(function(i){return {diseno:S.designs[i.d].n,cm:parseFloat(i.cm),precio_metro:parseFloat(i.p),doble_forro:!!i.df,color_forro:i.c.trim()}})};
+var payload={celular:cel,nombre:nom,entrega:NP.ent,envio_nombre:NP.ent==='envio'?NP.en.trim():null,envio_celular:NP.ent==='envio'?NP.ec.trim():null,envio_ciudad:NP.ent==='envio'?NP.ci.trim():null,tropico:NP.ent==='envio'&&!!NP.tro,fecha_entrega:NP.f||addDays(today(),2),pago_efectivo:a.ef,pago_qr:a.qr,
+items:NP.items.map(function(i){return {diseno:S.designs[i.d].n,cm:pn(i.cm),precio_metro:pn(i.p),doble_forro:!!i.df,color_forro:i.c.trim()}})};
 var r=await run(function(){return sb.rpc('crear_pedido',{p:payload})});
 if(!r)return;
 var num=r.data;NP=null;
@@ -557,9 +599,10 @@ var e=ev.target;
 if(e.id==='q'){R.q=e.value;drawPedList();return}
 if(e.dataset.np){NP[e.dataset.np]=e.value;
 if(e.dataset.np==='cel'){var c=e.value.trim(),m=null;if(c.length>=7)S.orders.forEach(function(o){if(o.cel===c&&!m)m=o});if(m){NP.nom=m.cl;$('#nom').value=m.cl}$('#regmsg').style.display=m?'':'none'}
+if(e.dataset.np==='ad'||e.dataset.np==='ae'||e.dataset.np==='aq')ntot();
 return}
 if(e.dataset.ni!==undefined){var it=NP.items[+e.dataset.ni],f=e.dataset.f;it[f]=e.value;
-if(f==='cm'||f==='p'){var k=e.dataset.ni,raw=nraw(it);$('#ns'+k).textContent=bs(nsub(it));$('#nr'+k).innerHTML=raw!==Math.round(raw)?'<span style="font-size:12px;font-weight:400;color:var(--muted)">'+raw.toFixed(2).replace('.',',')+' redondeado </span>':'';ntot()}}
+if(f==='cm'||f==='p'){var k=e.dataset.ni,raw=nraw(it),ee=$('#e'+(f==='cm'?'cm':'pr')+k);if(ee)ee.textContent=fe(e.value);$('#ns'+k).textContent=bs(nsub(it));$('#nr'+k).innerHTML=raw!==Math.round(raw)?'<span style="font-size:12px;font-weight:400;color:var(--muted)">'+raw.toFixed(2).replace('.',',')+' redondeado </span>':'';ntot()}}
 });
 document.addEventListener('keydown',function(ev){
 if(ev.key==='Escape'&&ask.o)closeAsk();
