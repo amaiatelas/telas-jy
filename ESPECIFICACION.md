@@ -137,12 +137,131 @@ Solo dos cuentas: dueño y vendedora. Sin registro público.
 
 ## Diseño
 
-- Elegante y premium, fácil de leer. Color fucsia (#5A0E3D de base, acento #B01C75),
-  latón #D8B76E, fondo porcelana. Tipografías Bodoni Moda (títulos y cifras de dinero) y
-  Figtree (texto). Detalle de marca: regla de medir en latón en el borde de las cabeceras.
-  Muestras de tela (liso, floral, rayas, lunares) junto a cada diseño. Modo oscuro automático.
-  Barra inferior en celular y menú lateral en laptop. Botones de al menos 44 px. [HECHO]
+- Estilo "Obsidiana": fondo oscuro por defecto (claro automático según el dispositivo), acento
+  champagne #D6B97A, cobre para lo malo, tipografía Manrope. Barra inferior en celular y barra de
+  íconos lateral en pantallas anchas (cambia en la Fase 0). Botones de al menos 44 px. [HECHO]
+- Las muestras de color de los diseños se quitan en la Fase 0.
 
-## Futuro (todavía no)
+## PLAN POR FASES (pedido del dueño, 6 nov 2026)
 
-- Descontar stock de cada diseño en metros, con conversión de yardas a metros.
+Se trabaja una fase a la vez; el dueño escribe "sigue con la Fase N" para pasar a la siguiente.
+
+Reglas para todas las fases:
+- Mantener colores, tipografías y estilo actuales (diseño Obsidiana). No cambiar lo que ya existe:
+  cálculos de dinero y redondeo hacia arriba, permisos del dueño y la vendedora, horario, adelanto,
+  pedidos sin nombre y datos de envío opcionales.
+- Los permisos se aplican en la base de datos (RLS y triggers), no solo en la pantalla.
+- Orden: primero Supabase, después GitHub. El SQL se entrega como el archivo completo
+  `supabase/01_esquema.sql` (repetible) más un archivo de comprobación nuevo.
+- Pruebas del dueño: celulares 7000000X y nombres que empiecen con "PRUEBA". Al final de cada fase se
+  actualiza `supabase/04_limpiar_pruebas.sql` (tablas nuevas, borrados desactivados y con revisión previa)
+  y se agregan los casos de la fase a `PRUEBAS.md`.
+- Cada pantalla nueva o cambiada se verifica en 1024x768, 1180x820, 1280x800 y 1366x1024 (horizontal),
+  tablet vertical, celular y laptop: sin scroll horizontal, botones de al menos 44 px y, con el teclado
+  abierto, el campo activo y el botón principal visibles.
+- Sin librerías nuevas. `node --check`. Pedir confirmación antes de cambiar la base real o hacer git push.
+
+### Fase 0: estructura, filtros y orden [PENDIENTE, Fase 0]
+Se hace en la copia `telas-jy-estructura-d` (puerto 8775); no se toca la original hasta que el dueño diga OK.
+
+Regla de "Atrasado" (una sola definición, constante DIAS_ATRASO = 7 en app.js): un pedido En proceso o Listo
+que lleva MÁS de 7 días desde que se registró (fecha de creación en hora de Bolivia, America/La_Paz). Los
+entregados y cancelados nunca son atrasados. Se usa en la tarjeta "Atrasados", la etiqueta "Atrasado" de cada
+fila, el filtro "Atrasados" y el grupo "Atrasados" del Panel de entregas. La fecha de entrega (fecha_entrega)
+ya no se muestra ni se usa en pantalla: Nuevo pedido NO pide fecha y la base guarda la de hoy.
+1. [PENDIENTE, Fase 0] Menú: desde 900 px, barra superior fija con logo y botones con ícono y texto
+   (Pedidos, Nuevo, Cortes, Historial, Más). Menos de 900 px: barra inferior como hoy.
+2. [PENDIENTE, Fase 0] Pedidos: cuatro tarjetas arriba (Por cobrar en rojo, Cortes pendientes, Atrasados,
+   Entregados de los últimos 7 días); buscador por celular o número y selector de orden; filtros como
+   botones con cantidad (Todos, En proceso, Listos, Entregados, Con saldo, Atrasados (más de 7 días), Cortes
+   pendientes, Panel de entregas con tres grupos: Atrasados; Con saldo pendiente; Entregados últimos 7 días); tabla a
+   ancho completo con Pedido, Cliente, Registrado (fecha y "hace N días"; en los entregados, "Entregado" y su fecha), Cortes (segmentos y "X de Y"), Estado, Total y Saldo
+   ("Debe X Bs" en rojo o "Pagado"). Menos de 900 px se ocultan Registrado, Cortes y Estado (el estado pasa
+   bajo el cliente).
+3. [PENDIENTE, Fase 0] Detalle del pedido en panel lateral derecho (máx. 560 px, pantalla completa en
+   celular), con botón Cerrar, cierre al tocar fuera o con Esc. Contenido: el detalle actual. Al cambiar
+   algo dentro el panel sigue abierto y conserva el scroll; la animación solo al abrir; respeta
+   prefers-reduced-motion.
+4. [PENDIENTE, Fase 0] Orden con filtro "Todos" y orden "Por estado" (predeterminado): grupos con título y
+   cantidad: En proceso, Listos, Entregados, Cancelados. En En proceso y Listos, los MÁS ANTIGUOS arriba (por
+   fecha de creación). En Entregados, la fecha de entrega real (fecha_entregado), la más reciente arriba. En
+   Cancelados, la más reciente arriba por fecha de registro (no se guarda la fecha de cancelación). Si un
+   pedido cambia de estado, se mueve solo y aparece un aviso corto con el grupo al que pasó ("Pedido N pasó a
+   Listos"). Entregados y Cancelados plegados por defecto (título con cantidad, botón Mostrar/Ocultar y
+   etiqueta roja "N con saldo" si aplica); con texto en el buscador se despliegan solos. El filtro
+   "Entregados" muestra todos. Selector de orden: "Por estado (recomendado)", "Más antiguos primero" y "Más
+   nuevos primero" (estas dos, listas planas sin grupos, con los activos primero y luego entregados y
+   cancelados). Con cualquier filtro distinto de Todos, lista plana con el mismo criterio de orden.
+5. [PENDIENTE, Fase 0] Nuevo pedido: una sola columna ancha (máx. 880 px) con barra fija abajo con Total,
+   Adelanto, Saldo pendiente (rojo) y botón Guardar pedido.
+6. [PENDIENTE, Fase 0] Cortes: lista agrupada por diseño, con el nombre como encabezado (cantidad de cortes
+   y metros) y los cortes debajo con su casilla.
+7. [PENDIENTE, Fase 0] Más: pestañas arriba (Saldos, Ajustes, Accesos). Historial y demás pantallas
+   centradas con ancho máximo cómodo.
+8. [PENDIENTE, Fase 0] Diseños sin color: solo texto en lista; quitar muestras de color en todas partes
+   (cortes, selector, detalle, lista de Cortes). En Ajustes, crear un diseño pide solo el nombre. No se
+   borran las columnas patron y color de la base.
+
+### Fase 1: nota y recordar saldo [PENDIENTE, Fase 1]
+- [PENDIENTE, Fase 1] Nota por pedido: opcional, máx. 300 caracteres. Se escribe en Nuevo pedido; dueño y
+  vendedora la editan en el detalle. Se ve en el detalle, como línea gris bajo el cliente en la tabla y en
+  el PDF del pedido. Columna nueva en pedidos; el trigger debe permitir que ambos roles la cambien.
+- [PENDIENTE, Fase 1] Recordar saldo por WhatsApp: un solo botón "Recordar saldo" dentro del bloque rojo de
+  saldo (solo con saldo y no cancelado). Abre una ventana con el mensaje escrito y "Abrir WhatsApp" que abre
+  wa.me al celular del cliente del pedido (no al de envío; con 8 dígitos se antepone 591). Texto por
+  defecto: "Hola, te recuerdo que tu pedido {pedido} de Telas JY tiene un saldo pendiente de {saldo}.
+  Puedes pagarlo en efectivo o por QR cuando quieras. ¡Gracias!". El dueño lo edita en Ajustes (usa
+  {pedido} y {saldo}); se guarda en la tabla ajustes. Al tocar "Abrir WhatsApp" se guarda fecha y hora del
+  último recordatorio en el pedido (ambos roles) y se muestra en el bloque ("Último recordatorio: 5 nov").
+  NO hay botón de "avisar que está listo".
+
+### Fase 2: editar cortes [PENDIENTE, Fase 2]
+- [PENDIENTE, Fase 2] En pedidos no Entregados ni Cancelados: cada corte tiene "Editar" y "Quitar" y el
+  pedido "Agregar corte"; editar y agregar abren una ventana con diseño, medida, costo por metro, doble
+  forro y color. (Reemplaza/convive con la pantalla "Editar pedido" actual del dueño; definir al hacerla.)
+- [PENDIENTE, Fase 2] Un corte hecho no se edita ni se quita ("desmárcalo primero").
+- [PENDIENTE, Fase 2] Vendedora: cambia diseño, medida y doble forro y agrega cortes (escribe el costo por
+  metro del corte nuevo). Solo el dueño cambia el costo por metro de un corte existente o quita un corte.
+  Lo aplica la base de datos.
+- [PENDIENTE, Fase 2] El nuevo total nunca queda menor que lo ya pagado (error claro). El servidor fija el
+  recargo de doble forro con el valor actual de Ajustes cuando un corte pasa a tener doble forro y lo pone
+  en 0 si lo pierde.
+- [PENDIENTE, Fase 2] Historial de cambios en tabla nueva (quién, cuándo, qué, antes y después), registrado
+  por triggers, visible solo para el dueño en el detalle del pedido.
+
+### Fase 3: inventario de tela [PENDIENTE, Fase 3]
+- [PENDIENTE, Fase 3] 1 yarda = 91,44 cm. Se guarda todo en cm y se muestran yardas (2 decimales) y metros.
+- [PENDIENTE, Fase 3] Por diseño: "controla inventario" (por defecto no) y stock mínimo en yardas (opcional),
+  editados por el dueño en Ajustes. Los que no controlan no descuentan ni muestran stock.
+- [PENDIENTE, Fase 3] Tabla de movimientos (quién, cuándo, nota): entrada inicial o entrada (compra o
+  reposición, en yardas), salida automática al marcar un corte hecho, devolución al desmarcarlo, ajuste por
+  conteo físico o merma (solo dueño, motivo obligatorio). Se agrega `diseno_id` a los cortes (rellenado por
+  nombre en los existentes; `crear_pedido` y las ediciones lo resuelven por nombre).
+- [PENDIENTE, Fase 3] Tres números por diseño (yardas y metros): En bodega (suma de movimientos),
+  Comprometido (cortes pendientes de pedidos activos, en vivo) y Disponible (bodega menos comprometido).
+  Etiqueta "Poco stock" cuando el disponible llega al mínimo.
+- [PENDIENTE, Fase 3] Pantalla Inventario como pestaña dentro de Más: el dueño ve todo, registra entradas y
+  ajustes y ve el historial por diseño; la vendedora solo ve Disponible y la etiqueta (función en la base
+  que devuelve solo eso según el rol).
+- [PENDIENTE, Fase 3] En Nuevo pedido, junto al diseño, "Disponible: X yd". Si un corte supera lo
+  disponible, ADVIERTE ("faltan X yd") sin bloquear.
+- [PENDIENTE, Fase 3] PDF de inventario (solo dueño).
+
+### Fase 4: punto de venta (venta de mostrador) [PENDIENTE, Fase 4]
+- [PENDIENTE, Fase 4] Botón "Venta" en el menú (6 botones, también en la barra inferior del celular).
+- [PENDIENTE, Fase 4] Pantalla en dos columnas. Izquierda: diseños en texto (nombre y "Disp. X yd"), medida
+  con botones rápidos (20, 50, 100, 150, 200 cm) y campo, costo por metro (se rellena con el último usado
+  para ese diseño, editable), doble forro con color, "Agregar a la venta". Derecha: "Venta actual" (cortes
+  con ×, total grande con redondeo hacia arriba) y "Cobro completo": Efectivo, QR o Mixto (en Mixto deben
+  sumar el total), en efectivo campo "Recibido" que muestra el cambio (informativo), botón grande
+  "Cobrar y entregar" y "Limpiar". Arriba "Hoy: N ventas, X Bs" y abajo la lista de ventas de hoy. Tras
+  cobrar, la pantalla se limpia. Recibo en PDF opcional.
+- [PENDIENTE, Fase 4] Base de datos: una función atómica que crea el pedido de origen "mostrador" (celular
+  opcional, retiro, fecha de entrega hoy), sus cortes ya hechos (descuentan inventario por el trigger de la
+  Fase 3), el pago por el total calculado en el servidor (si efectivo + QR no suma el total, rechaza) y lo
+  deja Entregado con la fecha de hoy. Comparte la numeración de pedidos. Su efectivo cuenta para los
+  retiros.
+- [PENDIENTE, Fase 4] En Pedidos, las ventas de mostrador quedan ocultas en "Todos" y demás filtros y tienen
+  filtro propio "Mostrador". En Historial aparecen en Ventas, Pagos y Entregas con la etiqueta "Mostrador".
+- [PENDIENTE, Fase 4] Cancelar un pedido (de mostrador o normal) con cortes hechos que controlan inventario:
+  pregunta al dueño "¿La tela vuelve a bodega?"; si sí, registra la devolución.

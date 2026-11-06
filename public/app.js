@@ -28,7 +28,7 @@ function m2(cm){return (cm/100).toFixed(2).replace('.',',')}
 function tm(s){var p=String(s).split(':');return +p[0]*60+ +p[1]}
 
 var S={orders:[],designs:[],DF:70,TR:20,retiros:[],horario:[],acc:[]};
-var R={role:null,scr:'login',id:null,flt:'todos',q:'',pm:'Efectivo',hv:'pagos',hp:'7',hm:'todos',hf:null,ht:null,est:null,fuera:null,cta:null};
+var R={role:null,scr:'login',id:null,flt:'todos',ord:'estado',plg:{ent:1,can:1},panel:false,q:'',pm:'Efectivo',hv:'pagos',hp:'7',hm:'todos',hf:null,ht:null,est:null,fuera:null,cta:null};
 var NP=null;
 function own(){return R.role==='dueno'}
 
@@ -40,6 +40,27 @@ function paid(o){return o.pg.reduce(function(a,p){return a+(p.x?0:p.ef+p.qr)},0)
 function sal(o){return o.es==='Cancelado'?0:Math.max(0,tot(o)-paid(o))}
 function pend(o){return o.es==='Cancelado'?0:o.it.filter(function(i){return !i.h}).length}
 function byN(n){return S.orders.filter(function(o){return o.n===n})[0]}
+/* Un pedido está atrasado cuando sigue En proceso o Listo y lleva MÁS de estos días desde que se registró
+   (fecha de creación en hora de Bolivia). Es el único lugar donde vive este número. */
+var DIAS_ATRASO=7;
+function diasDesde(d){return Math.round((pdt(today())-pdt(d))/86400000)}
+function late(o){return activo(o)&&diasDesde(o.reg)>DIAS_ATRASO}
+function hace(o){var n=diasDesde(o.reg);return n<=0?'hoy':n===1?'hace 1 día':'hace '+n+' días'}
+function recent(o){return o.es==='Entregado'&&!!o.ent&&o.ent>=addDays(today(),-6)}
+/* Orden de la lista de pedidos: activos del más antiguo al más nuevo (fecha de registro); entregados por la
+   fecha en que se entregaron y cancelados por su fecha de registro (no se guarda la fecha de cancelación),
+   siempre la más reciente arriba */
+var GN={'En proceso':'En proceso','Listo':'Listos','Entregado':'Entregados','Cancelado':'Cancelados'};
+var RK={'En proceso':0,'Listo':1,'Entregado':2,'Cancelado':3};
+function activo(o){return o.es==='En proceso'||o.es==='Listo'}
+function cre(o){return o.cre||o.reg}
+function cmpAnt(a,b){var x=cre(a),y=cre(b);return x<y?-1:x>y?1:a.n-b.n}
+function cmpRec(a,b){var x=cre(a),y=cre(b);return x<y?1:x>y?-1:b.n-a.n}
+function fin(o){return o.es==='Entregado'?(o.ent||o.reg):o.reg}
+function cmpFin(a,b){var x=fin(a),y=fin(b);return x<y?1:x>y?-1:b.n-a.n}
+function cmpEst(a,b){var d=RK[a.es]-RK[b.es];if(d)return d;return activo(a)?cmpAnt(a,b):cmpFin(a,b)}
+function cmpPlano(prim){return function(a,b){var x=activo(a)?0:a.es==='Entregado'?1:2,y=activo(b)?0:b.es==='Entregado'?1:2;if(x!==y)return x-y;return x===0?prim(a,b):cmpFin(a,b)}}
+function cmpOrd(){return R.ord==='antiguos'?cmpPlano(cmpAnt):R.ord==='nuevos'?cmpPlano(cmpRec):cmpEst}
 function allDone(o){return o.it.length>0&&o.it.every(function(i){return i.h})}
 /* Celular normalizado: sin espacios, guiones, paréntesis ni "+", y sin el 591 inicial (igual que crear_pedido) */
 function ncel(s){var d=String(s==null?'':s).replace(/[\s\-()+]/g,'');return /^591\d{8}$/.test(d)?d.slice(3):d}
@@ -54,7 +75,7 @@ function avisoCliente(){var n=prevCount(NP.cel),el=$('#regmsg');if(!el)return;el
 function mapOrder(r){
 return {id:r.id,n:r.numero,cl:r.cliente_nombre||'',cel:r.cliente_celular,
 env:r.tipo_entrega==='envio'?{nom:r.envio_nombre||'',cel:r.envio_celular||'',ciu:r.envio_ciudad||'',tro:r.envio_tropico?1:0}:null,
-trv:r.costo_envio||0,f:r.fecha_entrega,reg:lp(r.creado_en),ent:r.fecha_entregado,es:ESL[r.estado]||r.estado,
+trv:r.costo_envio||0,cre:r.creado_en,reg:lp(r.creado_en),ent:r.fecha_entregado,es:ESL[r.estado]||r.estado,
 it:(r.pedido_items||[]).slice().sort(function(a,b){return a.orden-b.orden}).map(function(i){return {id:i.id,d:i.diseno,cm:+i.cm,p:+i.precio_metro,df:i.doble_forro?1:0,c:i.color_forro||'',h:i.hecho?1:0,rec:i.recargo,sub:i.subtotal}}),
 pg:(r.pagos||[]).slice().sort(function(a,b){return a.creado_en<b.creado_en?-1:1}).map(function(p){return {id:p.id,d:lp(p.creado_en),t:Date.parse(p.creado_en),ef:p.efectivo,qr:p.qr,v:p.verificado?1:0,x:p.anulado?1:0,mot:p.motivo_anulacion||''}})};
 }
@@ -122,7 +143,7 @@ var e=r.data;
 if(e.rol==='vendedora'&&!e.dentro){clearInterval(tim);R.fuera=e;R.role=null;await sb.auth.signOut();R.scr='fuera';draw();return}
 R.est=e;
 var af=document.activeElement;
-var calma=!ask.o&&!R.envdirty&&['nuevo','editar','accesos','ajustes','clave'].indexOf(R.scr)<0&&!(af&&/INPUT|SELECT|TEXTAREA/.test(af.tagName));
+var calma=!ask.o&&!R.envdirty&&['nuevo','editar','accesos','ajustes','cuenta'].indexOf(R.scr)<0&&!(af&&/INPUT|SELECT|TEXTAREA/.test(af.tagName));
 if(calma){try{await cargar();draw()}catch(x){}}
 }
 
@@ -135,13 +156,6 @@ M.innerHTML='<div class="mb"><h2 class="serif h2" style="margin-bottom:8px">'+es
 M.classList.add('open');ask.o=o;var i=$('#mi');if(i)i.focus()}
 function closeAsk(){$('#modal').classList.remove('open');ask.o=null}
 function ruler(){return '<svg class="ruler" width="100%" height="16" aria-hidden="true"><defs><pattern id="regla" width="40" height="16" patternUnits="userSpaceOnUse"><path d="M0.6 0v11M8.6 0v6M16.6 0v6M24.6 0v6M32.6 0v6" stroke="currentColor" stroke-width="1.2" fill="none"/></pattern></defs><rect width="100%" height="16" fill="url(#regla)"/></svg>'}
-function sw(name,size){
-var o=S.designs.filter(function(x){return x.n===name})[0]||{pat:'liso',col:'#9AA0B0'};size=size||40;
-var s='<svg width="'+size+'" height="'+size+'" viewBox="0 0 40 40" aria-hidden="true" style="flex:none"><rect width="40" height="40" rx="9" fill="'+o.col+'" stroke="rgba(0,0,0,.12)"/>';
-if(o.pat==='floral')s+='<circle cx="12" cy="13" r="5" fill="#fff" fill-opacity=".45"/><circle cx="27" cy="24" r="6" fill="#fff" fill-opacity=".45"/><circle cx="14" cy="30" r="3" fill="#fff" fill-opacity=".45"/>';
-else if(o.pat==='rayas')s+='<rect x="7" width="5" height="40" fill="#fff" fill-opacity=".4"/><rect x="18" width="5" height="40" fill="#fff" fill-opacity=".4"/><rect x="29" width="5" height="40" fill="#fff" fill-opacity=".4"/>';
-else if(o.pat==='lunares')s+='<circle cx="10" cy="10" r="2.6" fill="#15172B" fill-opacity=".75"/><circle cx="30" cy="10" r="2.6" fill="#15172B" fill-opacity=".75"/><circle cx="20" cy="20" r="2.6" fill="#15172B" fill-opacity=".75"/><circle cx="10" cy="30" r="2.6" fill="#15172B" fill-opacity=".75"/><circle cx="30" cy="30" r="2.6" fill="#15172B" fill-opacity=".75"/>';
-return s+'</svg>'}
 var IC={
 back:'<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>',
 ped:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 9h6M9 13h6M9 17h3"/></svg>',
@@ -153,10 +167,11 @@ chev:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="curren
 trash:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12"/></svg>',
 plus:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>',
 edit:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4zM13.5 6.5l4 4"/></svg>',
+x:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>',
 out:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4M15 8l4 4-4 4M19 12H9"/></svg>'};
 
 function hero(o){
-var top=o.back?'<button class="ib" data-a="go" data-v="'+o.back+'" aria-label="Volver">'+IC.back+'</button>':'<div class="brand"><span class="mono">JY</span><span class="serif" style="font-size:22px">Telas JY</span></div>';
+var top=o.back?'<button class="ib" data-a="'+(o.backa||'go')+'" data-v="'+o.back+'" aria-label="Volver">'+IC.back+'</button>':'<div class="brand"><span class="mono">JY</span><span class="serif" style="font-size:22px">Telas JY</span></div>';
 var right=o.right!==undefined?o.right:'<span class="rolechip">'+(own()?'Dueño':'Vendedora')+'</span>';
 var h='<header class="hero"><div class="cn"><div class="htop">'+top+'<div class="hright">'+right+'<button class="ib lo" data-a="logout" aria-label="Cerrar sesión">'+IC.out+'<span>Cerrar sesión</span></button></div></div>';
 if(o.title)h+='<div class="serif ht">'+o.title+'</div>';
@@ -189,35 +204,71 @@ return '<header class="hero" style="padding:0"><div class="cn" style="padding:60
 '<div class="box"><div class="lb" style="margin-bottom:8px">Tu horario de ingreso</div>'+rows+'<div class="mut" style="border-top:1px solid var(--line);margin-top:8px;padding-top:10px">Hora de Bolivia. Si necesitas entrar ahora, habla con el dueño.</div></div>'+
 '<button class="btn" data-a="go" data-v="login">Volver al inicio</button></div></div>'}
 
+function pedCnt(){
+var c={todos:S.orders.length,proceso:0,listo:0,entregado:0,saldo:0,atrasado:0,cortes:0};
+S.orders.forEach(function(o){if(o.es==='En proceso')c.proceso++;if(o.es==='Listo')c.listo++;if(o.es==='Entregado')c.entregado++;if(sal(o)>0)c.saldo++;if(late(o))c.atrasado++;if(pend(o)>0)c.cortes++});
+return c}
 function sPed(){
-var cob=0,cp=0;S.orders.forEach(function(o){cob+=sal(o);cp+=pend(o)});
-var cnt={todos:S.orders.length,saldo:S.orders.filter(function(o){return sal(o)>0}).length,pagado:S.orders.filter(function(o){return sal(o)<=0&&o.es!=='Cancelado'}).length,cortes:S.orders.filter(function(o){return pend(o)>0}).length};
-var tabs=[['todos','Todos'],['saldo','Con saldo'],['pagado','Pagados'],['cortes','Cortes pendientes']].map(function(t){return '<button class="tab'+(R.flt===t[0]?' on':'')+'" data-a="flt" data-v="'+t[0]+'">'+t[1]+' <span class="cnt">'+cnt[t[0]]+'</span></button>'}).join('');
-return hero({kick:'Por cobrar',big:bs(cob),debt:cob>0,stats:[[S.orders.length,'Pedidos'],[cp,'Cortes pendientes']]})+
-'<div class="sheet"><div class="cn" style="padding-top:12px"><input id="q" class="fi" aria-label="Buscar pedido" placeholder="Buscar por celular, nombre o número" value="'+esc(R.q)+'" style="background:var(--surface2)"><div class="tabs">'+tabs+'</div><div id="pl"></div></div></div>'}
-function orderRow(o){
-var dl=esc(envTxt(o))+(o.ent?', entregado '+fd(o.ent):'');
+var cob=0,cp=0,at=0,e7=0;S.orders.forEach(function(o){cob+=sal(o);cp+=pend(o);if(late(o))at++;if(recent(o))e7++});
+var c=pedCnt();
+var fl=[['todos','Todos'],['proceso','En proceso'],['listo','Listos'],['entregado','Entregados'],['saldo','Con saldo'],['atrasado','Atrasados'],['cortes','Cortes pendientes'],['panel','Panel de entregas']];
+var fb=fl.map(function(t){return '<button class="pill'+(R.flt===t[0]?' on':'')+'" data-a="flt" data-v="'+t[0]+'" aria-pressed="'+(R.flt===t[0])+'">'+t[1]+(c[t[0]]!=null?' <span class="cnt">'+c[t[0]]+'</span>':'')+'</button>'}).join('');
+var kp=[['Por cobrar',bs(cob),cob>0?' bad':''],['Cortes pendientes',cp,''],['Atrasados',at,at>0?' warn':''],['Entregados, últimos 7 días',e7,'']].map(function(k){return '<div class="kpi'+k[2]+'"><div class="serif kv">'+k[1]+'</div><div class="kl">'+k[0]+'</div></div>'}).join('');
+var os=[['estado','Por estado (recomendado)'],['antiguos','Más antiguos primero'],['nuevos','Más nuevos primero']].map(function(x){return '<option value="'+x[0]+'"'+(R.ord===x[0]?' selected':'')+'>'+x[1]+'</option>'}).join('');
+return hero({title:'Pedidos'})+
+'<div class="sheet"><div class="cn"><div class="kpis">'+kp+'</div>'+
+'<div class="ptool"><input id="q" class="fi" type="search" aria-label="Buscar pedido" placeholder="Buscar por celular, nombre o número" value="'+esc(R.q)+'"><select id="ord" class="fi" data-a="ord" aria-label="Ordenar pedidos">'+os+'</select></div>'+
+'<div class="fbar" role="group" aria-label="Filtrar pedidos">'+fb+'</div><div id="pl"></div></div></div>'}
+function chipsPed(o){
+return (envFalta(o)?'<span class="chip c-warn">Datos de envío pendientes</span>':'')+(own()&&o.pg.some(function(x){return !x.x&&x.qr>0&&!x.v})?'<span class="chip c-warn">QR sin verificar en el banco</span>':'')}
+function rowHtml(o){
+var done=o.it.filter(function(i){return i.h}).length,s=sal(o),t=tot(o),lt=late(o);
 var tk=o.it.map(function(i){return '<span class="tk'+(i.h?' f':'')+'"></span>'}).join('');
-var done=o.it.filter(function(i){return i.h}).length,s=sal(o),t=tot(o);
-var amt=s>0?'<span class="debt-l">Debe</span><span class="serif amt-d">'+bs(s)+'</span><span class="mut">de '+bs(t)+'</span>':'<span class="serif amt">'+bs(t)+'</span>'+(o.es!=='Cancelado'?'<span class="good">Pagado</span>':'');
-return '<button class="ord" data-a="open" data-v="'+o.n+'"><div class="ord-main"><b class="ord-n">'+esc(nom(o))+'</b><span class="mut">Pedido '+o.n+', '+dl+'</span>'+(envFalta(o)?'<span class="chip c-warn" style="align-self:flex-start">Datos de envío pendientes</span>':'')+(own()&&o.pg.some(function(x){return !x.x&&x.qr>0&&!x.v})?'<span class="chip c-warn" style="align-self:flex-start">QR sin verificar en el banco</span>':'')+
-'<div class="ord-meta">'+chipEs(o)+'<span class="ticks">'+tk+'</span><span class="mut">Cortes '+done+' de '+o.it.length+'</span></div></div><div class="ord-amt">'+amt+'</div></button>'}
+var ent=o.es==='Entregado',l1=ent?'Entregado':'Registrado '+fd(o.reg),l2=ent?(o.ent?fd(o.ent):''):hace(o);
+var sa=o.es==='Cancelado'?'<span class="mut">—</span>':(s>0?'<span class="debt-t">Debe '+bs(s)+'</span>':'<span class="good">Pagado</span>');
+return '<tr class="trow'+(R.panel&&R.id===o.n?' sel':'')+'" data-a="open" data-v="'+o.n+'" tabindex="0" aria-label="Abrir pedido '+o.n+', '+esc(nom(o))+'">'+
+'<td class="c-n"><b>'+o.n+'</b></td>'+
+'<td class="c-cl"><b class="nm">'+esc(nom(o))+'</b>'+(o.cl?'<span class="mut">'+esc(o.cel)+'</span>':'')+'<span class="chips">'+chipsPed(o)+'</span><span class="only-m">'+chipEs(o)+(lt?'<span class="chip c-late">Atrasado</span>':'')+'</span></td>'+
+'<td class="c-en"><span>'+l1+'</span><span class="mut'+(lt?' lt':'')+'">'+l2+'</span>'+(lt?'<span class="chip c-late">Atrasado</span>':'')+'</td>'+
+'<td class="c-co"><span class="ticks">'+tk+'</span><span class="mut">'+done+' de '+o.it.length+'</span></td>'+
+'<td class="c-es">'+chipEs(o)+'</td>'+
+'<td class="c-to serif">'+(o.es==='Cancelado'?'<span class="mut">'+bs(t)+'</span>':bs(t))+'</td>'+
+'<td class="c-sa">'+sa+'</td></tr>'}
+function tHead(){return '<colgroup><col class="c-n"><col class="c-cl"><col class="c-en"><col class="c-co"><col class="c-es"><col class="c-to"><col class="c-sa"></colgroup><thead><tr><th class="c-n">Pedido</th><th class="c-cl">Cliente</th><th class="c-en">Registrado</th><th class="c-co">Cortes</th><th class="c-es">Estado</th><th class="c-to">Total</th><th class="c-sa">Saldo</th></tr></thead>'}
+var MQ=window.matchMedia('(max-width:899px)');
+function ncol(){return MQ.matches?4:7}
+function ghead(titulo,n,extra){return '<tr class="ghead"><td colspan="'+ncol()+'"><div class="gh"><b class="serif gt">'+titulo+'</b><span class="gc">'+n+'</span>'+(extra||'')+'</div></td></tr>'}
+function matchQ(o){
+var q=R.q.toLowerCase().trim();if(!q)return true;
+var qc=q.replace(/[\s\-]/g,''),qn=ncel(q),h=(o.cl+' '+o.cel+' '+o.n).toLowerCase(),hc=h.replace(/[\s\-]/g,'');
+return h.indexOf(q)>=0||hc.indexOf(qc)>=0||!!(qn&&hc.indexOf(qn)>=0)}
+function passF(o){
+switch(R.flt){case 'proceso':return o.es==='En proceso';case 'listo':return o.es==='Listo';case 'entregado':return o.es==='Entregado';
+case 'saldo':return sal(o)>0;case 'atrasado':return late(o);case 'cortes':return pend(o)>0;default:return true}}
+function panelEnt(rows){
+var secs=[['Atrasados',rows.filter(late).sort(cmpAnt)],['Con saldo pendiente',rows.filter(function(o){return sal(o)>0}).sort(function(a,b){return sal(b)-sal(a)||a.n-b.n})],['Entregados, últimos 7 días',rows.filter(recent).sort(cmpFin)]];
+return '<table class="ptab">'+tHead()+secs.map(function(s){return '<tbody class="grp">'+ghead(s[0],s[1].length)+(s[1].length?s[1].map(rowHtml).join(''):'<tr class="gnone"><td colspan="'+ncol()+'">Ninguno por ahora</td></tr>')+'</tbody>'}).join('')+'</table>'}
 function drawPedList(){
-var q=R.q.toLowerCase().trim(),qc=q.replace(/[\s\-]/g,''),qn=ncel(q);
-var rows=S.orders.filter(function(o){
-if(q){var h=(o.cl+' '+o.cel+' '+o.n).toLowerCase(),hc=h.replace(/[\s\-]/g,'');if(h.indexOf(q)<0&&hc.indexOf(qc)<0&&!(qn&&hc.indexOf(qn)>=0))return false}
-if(R.flt==='saldo')return sal(o)>0;
-if(R.flt==='pagado')return sal(o)<=0&&o.es!=='Cancelado';
-if(R.flt==='cortes')return pend(o)>0;
-return true});
 var el=$('#pl');if(!el)return;
-el.innerHTML=rows.length?rows.map(orderRow).join(''):'<div class="empty">'+(S.orders.length?'No hay pedidos con ese filtro':'Todavía no hay pedidos. Toca “Nuevo” para registrar el primero.')+'</div>'}
+var tx=!!R.q.trim(),rows=S.orders.filter(matchQ);
+if(R.flt==='panel'){el.innerHTML=panelEnt(rows);return}
+rows=rows.filter(passF);
+if(!rows.length){el.innerHTML='<div class="empty">'+(S.orders.length?'No hay pedidos con ese filtro':'Todavía no hay pedidos. Toca “Nuevo” para registrar el primero.')+'</div>';return}
+var h='<table class="ptab">'+tHead();
+if(R.flt==='todos'&&R.ord==='estado'){
+['En proceso','Listo','Entregado','Cancelado'].forEach(function(g){
+var rs=rows.filter(function(o){return o.es===g}).sort(cmpEst);if(!rs.length)return;
+var fold=g==='Entregado'||g==='Cancelado',key=g==='Entregado'?'ent':'can',closed=fold&&R.plg[key]&&!tx,cs=rs.filter(function(o){return sal(o)>0}).length;
+var ex=fold?(cs?'<span class="chip c-bad">'+cs+' con saldo</span>':'')+(tx?'':'<button class="btn o2 sm gbtn" data-a="gtog" data-v="'+key+'" aria-expanded="'+(!closed)+'">'+(closed?'Mostrar':'Ocultar')+'</button>'):'';
+h+='<tbody class="grp'+(closed?' closed':'')+'">'+ghead(GN[g],rs.length,ex)+(closed?'':rs.map(rowHtml).join(''))+'</tbody>'})}
+else h+='<tbody>'+rows.sort(cmpOrd()).map(rowHtml).join('')+'</tbody>';
+el.innerHTML=h+'</table>'}
 
-function sDet(){
-var o=byN(R.id);if(!o){R.scr='pedidos';return sPed()}
-var s=sal(o),p=paid(o),t=tot(o),pm=R.pm||'Efectivo';
-var h=hero({back:'pedidos',right:chipEs(o,'background:transparent;border:1px solid rgba(255,255,255,.4);color:#fff'),kick:'Pedido '+o.n,title:esc(nom(o)),sub:(o.cl?esc(o.cel)+'<br>':'')+esc(envTxt(o))+(o.ent?', entregado '+fd(o.ent):'')});
-var b='<div class="sheet"><div class="cn">';
+/* Detalle del pedido: panel que se desliza desde la derecha */
+function detPanel(o){
+var s=sal(o),p=paid(o),t=tot(o),pm=R.pm||'Efectivo',lt=late(o);
+var h='<div class="phead"><div class="pt"><div class="kick">Pedido '+o.n+'</div><div class="serif pname">'+esc(nom(o))+'</div><div class="hsub">'+(o.cl?esc(o.cel)+'<br>':'')+esc(envTxt(o))+(o.ent?', entregado '+fd(o.ent):', registrado '+fd(o.reg)+', '+hace(o))+'</div></div><div class="pbtn">'+chipEs(o)+(lt?'<span class="chip c-late">Atrasado</span>':'')+'<button class="ib lo pclose" data-a="pclose" aria-label="Cerrar detalle del pedido">'+IC.x+'<span>Cerrar</span></button></div></div>';
+var b='<div class="pbody">';
 if(o.es==='Cancelado')b+='<div class="box" style="margin-top:18px"><b>Pedido cancelado</b></div>';
 else if(s>0){
 var f='';
@@ -228,10 +279,10 @@ b+='<div class="saldo"><div class="l" style="align-items:flex-end"><div><div sty
 '<div id="perr" class="err" style="color:var(--saldo-soft)"></div><div class="g2"><button class="btn b" data-a="comp">Completar pago</button><button class="btn w" data-a="reg" style="margin-top:0">Registrar pago</button></div></div>'}
 else b+='<div class="pagado">Pedido pagado por completo</div>';
 if(o.es==='En proceso'&&allDone(o))b+='<div class="note"><span><b>Todos los cortes hechos.</b> ¿Marcar como listo?</span><button class="btn sm" style="width:auto" data-a="listo">Marcar como listo</button></div>';
-b+='<div class="l" style="margin:6px 0"><h2 class="serif h2">Cortes</h2><span style="display:flex;align-items:center;gap:10px"><span class="mut">'+o.it.filter(function(i){return i.h}).length+' de '+o.it.length+' hechos</span>'+(own()&&o.es!=='Cancelado'?'<button class="btn o sm" style="width:auto;margin:0;height:40px;padding:0 14px" data-a="edit">'+IC.edit+' Editar pedido</button>':'')+'</span></div><div class="card">';
+b+='<div class="l" style="margin:6px 0"><h2 class="serif h2">Cortes</h2><span style="display:flex;align-items:center;gap:10px"><span class="mut">'+o.it.filter(function(i){return i.h}).length+' de '+o.it.length+' hechos</span>'+(own()&&o.es!=='Cancelado'?'<button class="btn o sm" style="width:auto;margin:0;height:44px;padding:0 14px" data-a="edit">'+IC.edit+' Editar pedido</button>':'')+'</span></div><div class="card">';
 o.it.forEach(function(i,j){
 var raw=craw(i),rr=raw!==Math.round(raw)?'<div class="mut" style="font-size:11px">'+raw.toFixed(2).replace('.',',')+' redondeado</div>':'';
-b+='<div class="crow"><input type="checkbox" data-a="cut" data-v="'+j+'" aria-label="Marcar corte '+esc(i.d)+' como hecho"'+(i.h?' checked':'')+'>'+sw(i.d)+'<div style="flex:1"><div style="font-weight:700;font-size:16px" class="'+(i.h?'st-t':'')+'">'+esc(i.d)+'</div><div class="mut">'+i.cm+' cm a '+i.p+' Bs por metro</div>'+(i.df?'<div style="font-size:13px;font-weight:700;color:var(--brass-text)">Doble forro '+esc(i.c.toLowerCase())+', +'+i.rec+' Bs</div>':'')+'</div><div style="text-align:right"><div class="serif" style="font-size:20px">'+bs(csub(i))+'</div>'+rr+'</div></div>'});
+b+='<div class="crow"><input type="checkbox" data-a="cut" data-v="'+j+'" aria-label="Marcar corte '+esc(i.d)+' como hecho"'+(i.h?' checked':'')+'><div style="flex:1"><div style="font-weight:700;font-size:16px" class="'+(i.h?'st-t':'')+'">'+esc(i.d)+'</div><div class="mut">'+i.cm+' cm a '+i.p+' Bs por metro</div>'+(i.df?'<div style="font-size:13px;font-weight:700;color:var(--brass-text)">Doble forro '+esc(i.c.toLowerCase())+', +'+i.rec+' Bs</div>':'')+'</div><div style="text-align:right"><div class="serif" style="font-size:20px">'+bs(csub(i))+'</div>'+rr+'</div></div>'});
 b+='</div>';
 if(o.trv>0)b+='<div class="l mut" style="padding:8px 4px 0"><span>Envío trópico</span><span>'+bs(o.trv)+'</span></div>';
 b+='<div class="l" style="padding:8px 4px 0"><b>Total del pedido</b><span class="serif" style="font-size:26px">'+bs(t)+'</span></div>';
@@ -241,12 +292,30 @@ if(!o.pg.length)b+='<div class="mut">Sin pagos registrados</div>';
 o.pg.forEach(function(x,j){
 var me=x.ef>0&&x.qr>0?'Mixto, ef. '+bs(x.ef)+' y QR '+bs(x.qr):(x.ef>0?'Efectivo':'QR');
 b+='<div class="hrow"><div class="l"><div class="'+(x.x?'st-t':'')+'"><b>'+me+'</b><div class="mut">'+fd(x.d)+(x.x?', anulado: '+esc(x.mot):'')+'</div></div><div style="text-align:right"><div class="serif '+(x.x?'st-t':'')+'" style="font-size:20px">'+bs(x.ef+x.qr)+'</div></div></div>'+
-(x.x?'':'<div class="l" style="margin-top:6px"><label class="ck" style="min-height:36px;font-size:13px"><input type="checkbox" data-a="ver" data-v="'+j+'"'+(x.v?' checked':'')+(own()?'':' disabled')+' style="width:20px;height:20px"> '+(x.qr>0?'Verificado en el banco':'Verificado')+'</label>'+(own()?'<button class="btn o2 sm" style="width:auto;height:40px" data-a="anu" data-v="'+j+'">Anular</button>':'')+'</div>')+'</div>'});
+(x.x?'':'<div class="l" style="margin-top:6px"><label class="ck" style="min-height:44px;font-size:13px"><input type="checkbox" data-a="ver" data-v="'+j+'"'+(x.v?' checked':'')+(own()?'':' disabled')+' style="width:22px;height:22px"> '+(x.qr>0?'Verificado en el banco':'Verificado')+'</label>'+(own()?'<button class="btn o2 sm" style="width:auto;height:44px" data-a="anu" data-v="'+j+'">Anular</button>':'')+'</div>')+'</div>'});
 if(!own()&&o.pg.length)b+='<div class="mut">Solo el dueño verifica y anula pagos.</div>';
 b+='<h2 class="serif h2" style="margin:22px 0 8px"><label for="es">Estado del pedido</label></h2><select id="es" class="fi" data-a="es">'+['En proceso','Listo','Entregado'].concat(own()?['Cancelado']:[]).map(function(x){return '<option'+(x===o.es?' selected':'')+'>'+x+'</option>'}).join('')+'</select>'+
 '<div class="g2" style="margin-top:14px"><button class="btn" data-a="wa">Enviar por WhatsApp</button><button class="btn o2" style="margin-top:0" data-a="pdfped">Descargar PDF</button></div>'+
-(own()?'<button class="btn o2 danger" style="margin-top:22px" data-a="delp">'+IC.trash+' Eliminar pedido</button>':'')+'</div></div>';
+(own()?'<button class="btn o2 danger" style="margin-top:22px" data-a="delp">'+IC.trash+' Eliminar pedido</button>':'')+'</div>';
 return h+b}
+function drawPanel(){
+var P=$('#panel');if(!P)return;
+var o=(R.panel&&R.scr==='pedidos')?byN(R.id):null;
+if(!o){if(P.classList.contains('open'))closePanel(true);return}
+var ae=document.activeElement,key=null;
+if(ae&&P.contains(ae)&&ae.dataset&&ae.dataset.a)key='[data-a="'+ae.dataset.a+'"]'+(ae.dataset.v!=null?'[data-v="'+ae.dataset.v+'"]':'');
+var was=P.classList.contains('open'),top=P.scrollTop;
+P.innerHTML=detPanel(o);
+if(!was){
+P.scrollTop=0;P.setAttribute('aria-hidden','false');$('#scrim').classList.add('open');document.body.classList.add('plock');
+void P.offsetWidth;P.classList.add('open');
+var c=P.querySelector('.pclose');if(c)c.focus({preventScroll:true})}
+else{P.scrollTop=top;if(key){var n=P.querySelector(key);if(n)n.focus({preventScroll:true})}}}
+function closePanel(silent){
+var P=$('#panel');if(!P)return;
+R.panel=false;P.classList.remove('open');P.setAttribute('aria-hidden','true');$('#scrim').classList.remove('open');document.body.classList.remove('plock');
+drawPedList();
+if(!silent){var r=document.querySelector('.trow[data-v="'+R.id+'"]');if(r)r.focus({preventScroll:true})}}
 
 /* Datos de envío del pedido: dueño y vendedora pueden completarlos o corregirlos mientras no esté cancelado */
 function secEnvio(o){
@@ -276,9 +345,9 @@ var fila=$('#esr');fila.style.color=(bad||dif>0)?'var(--hero-bad)':'var(--hero-m
 $('#n6').style.display=(!bad&&dif===0&&c.t>0)?'block':'none'}
 function sEditar(){
 var o=byN(R.id);
-if(!o||!NP||!NP.edit||!own()||o.es==='Cancelado'){R.scr=o?'detalle':'pedidos';return o?sDet():sPed()}
-var h=hero({back:'detalle',title:'Editar pedido '+o.n,sub:esc(nom(o))});
-h+='<div class="sheet"><div class="cn narrow nuevo editar" style="max-width:640px">'+
+if(!o||!NP||!NP.edit||!own()||o.es==='Cancelado'){NP=null;R.scr='pedidos';R.panel=!!o;return sPed()}
+var h=hero({back:'pedidos',backa:'backdet',title:'Editar pedido '+o.n,sub:esc(nom(o))});
+h+='<div class="sheet"><div class="cn nuevo editar">'+
 '<div class="sec"><div class="l" style="margin-bottom:12px"><h2 class="serif h2">Cortes</h2><span class="mut" id="ncnt"></span></div><div id="ni"></div><button class="btn o" data-a="addcut">'+IC.plus+' Agregar corte</button></div>'+
 '<div class="sec"><h2 class="serif h2" style="margin-bottom:12px">Entrega</h2><div class="seg" role="group" aria-label="Tipo de entrega"><button data-a="nent" data-v="retiro" class="'+(NP.ent==='retiro'?'on':'')+'">Retiro en tienda</button><button data-a="nent" data-v="envio" class="'+(NP.ent==='envio'?'on':'')+'">Envío</button></div>';
 if(NP.ent==='envio')h+='<div style="margin-top:12px"><p class="mut" style="margin:0 0 10px;font-size:13px">Estos datos son opcionales. Puedes completarlos después.</p><div class="fld"><label class="lb" for="en">Nombre completo</label><input id="en" class="fi" data-np="en" value="'+esc(NP.en)+'"></div><div class="g2"><div><label class="lb" for="ec">Celular</label><input id="ec" class="fi" inputmode="numeric" data-np="ec" value="'+esc(NP.ec)+'"></div><div><label class="lb" for="ci">Ciudad</label><input id="ci" class="fi" data-np="ci" value="'+esc(NP.ci)+'"></div></div><label class="ck" style="margin-top:8px"><input type="checkbox" id="ntro" data-a="ntro"'+(NP.tro?' checked':'')+'> ¿Es para trópico? (+'+S.TR+' Bs)</label></div>';
@@ -318,40 +387,38 @@ var prev=prevCount(NP.cel);
 var h=hero({back:'pedidos',title:'Nuevo pedido'});
 if(!S.designs.length){
 return h+'<div class="sheet"><div class="cn narrow"><h2 class="serif h2" style="margin-top:22px">Primero agrega diseños</h2><p class="mut" style="font-size:15px">'+(own()?'La lista de diseños está vacía. Agrega los diseños de tela en Ajustes para poder registrar pedidos.':'La lista de diseños está vacía. Pídele al dueño que agregue los diseños.')+'</p>'+(own()?'<button class="btn" data-a="go" data-v="ajustes">Ir a Ajustes</button>':'')+'</div></div>'}
-h+='<div class="sheet"><div class="cn narrow nuevo" style="max-width:640px">'+
+h+='<div class="sheet"><div class="cn nuevo">'+
 '<div class="sec"><h2 class="serif h2" style="margin-bottom:12px">Cliente</h2><div class="fld"><label class="lb" for="cel">Celular del cliente</label><input id="cel" class="fi" inputmode="tel" data-np="cel" value="'+esc(NP.cel)+'" placeholder="71234567"></div><div id="regmsg" class="mut" style="font-size:13px;margin-top:2px;'+(prev?'':'display:none')+'">'+(prev===1?'Cliente con 1 pedido anterior':'Cliente con '+prev+' pedidos anteriores')+'</div></div>'+
-'<div class="sec"><div class="l" style="margin-bottom:12px"><h2 class="serif h2">Cortes</h2><span class="mut" id="ncnt"></span></div><div id="ni"></div><button class="btn o" data-a="addcut">'+IC.plus+' Agregar corte</button><div class="mut" style="margin-top:10px">'+(own()?'<button class="menu" style="min-height:44px;border:none;font-size:14px;color:var(--accent)" data-a="go" data-v="ajustes">Agregar diseño a la lista</button>':'¿Falta un diseño? Pídeselo al dueño.')+'</div></div>'+
+'<div class="sec"><div class="l" style="margin-bottom:12px"><h2 class="serif h2">Cortes</h2><span class="mut" id="ncnt"></span></div><div id="ni"></div><button class="btn o" data-a="addcut">'+IC.plus+' Agregar corte</button><div class="mut" style="margin-top:10px">Cada corte se redondea hacia arriba a Bs enteros.</div><div class="mut" style="margin-top:4px">'+(own()?'<button class="menu" style="min-height:44px;border:none;font-size:14px;color:var(--accent)" data-a="go" data-v="ajustes">Agregar diseño a la lista</button>':'¿Falta un diseño? Pídeselo al dueño.')+'</div></div>'+
 '<div class="sec"><h2 class="serif h2" style="margin-bottom:12px">Entrega</h2><div class="seg" role="group" aria-label="Tipo de entrega"><button data-a="nent" data-v="retiro" class="'+(NP.ent==='retiro'?'on':'')+'">Retiro en tienda</button><button data-a="nent" data-v="envio" class="'+(NP.ent==='envio'?'on':'')+'">Envío</button></div>';
 if(NP.ent==='envio')h+='<div style="margin-top:12px"><p class="mut" style="margin:0 0 10px;font-size:13px">Estos datos son opcionales. Puedes completarlos después.</p><div class="fld"><label class="lb" for="en">Nombre completo</label><input id="en" class="fi" data-np="en" value="'+esc(NP.en)+'"></div><div class="g2"><div><label class="lb" for="ec">Celular</label><input id="ec" class="fi" inputmode="numeric" data-np="ec" value="'+esc(NP.ec)+'"></div><div><label class="lb" for="ci">Ciudad</label><input id="ci" class="fi" data-np="ci" value="'+esc(NP.ci)+'"></div></div><label class="ck" style="margin-top:8px"><input type="checkbox" id="ntro" data-a="ntro"'+(NP.tro?' checked':'')+'> ¿Es para trópico? (+'+S.TR+' Bs)</label></div>';
 h+='</div>'+
-secAdelanto()+'<div class="box tot" style="margin-top:18px"><div class="l" style="color:var(--hero-muted)"><span>Cortes</span><span id="n1"></span></div><div class="l" style="color:var(--hero-muted)"><span>Envío trópico</span><span id="n2"></span></div><div class="l" style="border-top:1px solid rgba(255,255,255,.2);margin-top:8px;padding-top:10px;align-items:baseline"><b style="color:var(--gold)">Total</b><span class="serif" style="font-size:44px;line-height:1.05" id="n3"></span></div><div class="l" style="color:var(--hero-muted);margin-top:8px"><span>Adelanto</span><span id="n4"></span></div><div class="l" id="n5r" style="color:var(--hero-muted)"><span>Saldo pendiente</span><span id="n5"></span></div><div id="n6" style="display:none;font-weight:700;margin-top:4px">Pedido pagado por completo</div><div style="font-size:12px;color:var(--hero-muted);margin:6px 0 0">Cada corte se redondea hacia arriba a Bs enteros.</div></div>'+
-'<div class="nbar"><div id="nerr" class="err" role="alert"></div><div class="nbar-in"><div class="nbar-t"><span class="mut">Total</span><b class="serif" id="nb3"></b></div><button class="btn" data-a="savep">Guardar pedido</button></div></div></div></div>';
+secAdelanto()+
+'<div class="nbar"><div id="nerr" class="err" role="alert"></div><div class="nbar-in"><div class="nbar-sum"><div class="ns"><span class="mut">Total</span><b class="serif" id="nb3">0 Bs</b></div><div class="ns"><span class="mut">Adelanto</span><b class="serif" id="n4">0 Bs</b></div><div class="ns" id="n5r"><span class="mut">Saldo pendiente</span><b class="serif" id="n5">0 Bs</b></div></div><button class="btn" data-a="savep">Guardar pedido</button></div></div></div></div>';
 return h}
 function rn(){
 if(!$('#ni'))return;
 var h='';
 NP.items.forEach(function(it,k){
 var raw=nraw(it),rr=raw!==Math.round(raw)?'<span style="font-size:12px;font-weight:400;color:var(--muted)">'+raw.toFixed(2).replace('.',',')+' redondeado </span>':'';
-var dn=S.designs[it.d]?S.designs[it.d].n:'';
-h+='<div class="box"><div class="cut-h"><b>Corte '+(k+1)+'</b></div><div style="display:flex;gap:10px;align-items:flex-end;margin-bottom:12px">'+sw(dn,50)+'<div style="flex:1"><label class="lb" for="d'+k+'">Diseño</label><select id="d'+k+'" class="fi" data-a="nd" data-k="'+k+'">'+S.designs.map(function(d,j){return '<option value="'+j+'"'+(j===it.d?' selected':'')+'>'+esc(d.n)+'</option>'}).join('')+'</select></div><button class="btn o2" style="width:50px;height:50px;padding:0;margin:0" data-a="delcut" data-v="'+k+'" aria-label="Quitar corte '+(k+1)+'">'+IC.trash+'</button></div>'+
-'<div class="g2"><div><label class="lb" for="c'+k+'">Medida (cm)</label><input id="c'+k+'" class="fi" inputmode="decimal" data-ni="'+k+'" data-f="cm" value="'+esc(it.cm)+'" placeholder="80"><div class="err" id="ecm'+k+'">'+fe(it.cm)+'</div></div><div><label class="lb" for="p'+k+'">Costo por metro (Bs)</label><input id="p'+k+'" class="fi" inputmode="decimal" data-ni="'+k+'" data-f="p" value="'+esc(it.p)+'" placeholder="45"><div class="err" id="epr'+k+'">'+fe(it.p)+'</div></div></div>'+
-'<label class="ck" style="margin-top:6px"><input type="checkbox" data-a="ndf" data-k="'+k+'"'+(it.df?' checked':'')+'> Doble forro (+'+S.DF+' Bs)</label>'+
-(it.df?'<div class="fld" style="margin-top:6px"><label class="lb" for="col'+k+'">Color del forro</label><input id="col'+k+'" class="fi" data-ni="'+k+'" data-f="c" value="'+esc(it.c)+'" placeholder="Negro"></div>':'')+
-'<div class="l" style="border-top:1px solid var(--line);margin-top:10px;padding-top:10px;align-items:baseline"><span class="mut">Subtotal</span><span><span id="nr'+k+'">'+rr+'</span><span class="serif" style="font-size:24px" id="ns'+k+'">'+bs(nsub(it))+'</span></span></div></div>'});
+h+='<div class="box cut"><div class="cut-h"><b>Corte '+(k+1)+'</b><button class="btn o2 cdel" data-a="delcut" data-v="'+k+'" aria-label="Quitar corte '+(k+1)+'">'+IC.trash+'</button></div>'+
+'<div class="cgrid"><div class="cg-d"><label class="lb" for="d'+k+'">Diseño</label><select id="d'+k+'" class="fi" data-a="nd" data-k="'+k+'">'+S.designs.map(function(d,j){return '<option value="'+j+'"'+(j===it.d?' selected':'')+'>'+esc(d.n)+'</option>'}).join('')+'</select></div>'+
+'<div><label class="lb" for="c'+k+'">Medida (cm)</label><input id="c'+k+'" class="fi" inputmode="decimal" data-ni="'+k+'" data-f="cm" value="'+esc(it.cm)+'" placeholder="80"><div class="err" id="ecm'+k+'">'+fe(it.cm)+'</div></div><div><label class="lb" for="p'+k+'">Costo por metro (Bs)</label><input id="p'+k+'" class="fi" inputmode="decimal" data-ni="'+k+'" data-f="p" value="'+esc(it.p)+'" placeholder="45"><div class="err" id="epr'+k+'">'+fe(it.p)+'</div></div></div>'+
+'<div class="cfoot"><label class="ck"><input type="checkbox" data-a="ndf" data-k="'+k+'"'+(it.df?' checked':'')+'> Doble forro (+'+S.DF+' Bs)</label>'+
+(it.df?'<div class="cg-c"><label class="lb" for="col'+k+'">Color del forro</label><input id="col'+k+'" class="fi" data-ni="'+k+'" data-f="c" value="'+esc(it.c)+'" placeholder="Negro"></div>':'')+
+'<div class="csub"><span class="mut">Subtotal</span><span><span id="nr'+k+'">'+rr+'</span><span class="serif" style="font-size:24px" id="ns'+k+'">'+bs(nsub(it))+'</span></span></div></div></div>'});
 $('#ni').innerHTML=h;ntot()}
 function ntot(){
 if(NP&&NP.edit){etot();return}
-var s=NP.items.reduce(function(a,i){return a+nsub(i)},0),e=NP.ent==='envio'&&NP.tro?S.TR:0,t=s+e;
-$('#n1').textContent=bs(s);$('#n2').textContent=bs(e);$('#n3').textContent=bs(t);var nb=$('#nb3');if(nb)nb.textContent=bs(t);var c=$('#ncnt');if(c)c.textContent=NP.items.length+(NP.items.length===1?' corte':' cortes');
-var a=adel(),ad=a.ef+a.qr,txt='',rojo=false,pagado=false;
+function set(id,v){var e=$(id);if(e)e.textContent=v}
+var t=ntotal(),a=adel(),ad=a.ef+a.qr,txt,rojo=false,pagado=false;
 if(a.err)txt='—';
 else if(ad>t){txt='Supera el total';rojo=true}
-else if(t>0&&ad===t)pagado=true;
+else if(t>0&&ad===t){txt=bs(0);pagado=true}
 else{txt=bs(t-ad);rojo=t-ad>0}
-$('#n4').textContent=a.err?'—':bs(ad);
-$('#n5').textContent=txt;
-var fila=$('#n5r');fila.style.display=pagado?'none':'';fila.style.color=rojo?'var(--hero-bad)':'var(--hero-muted)';fila.style.fontWeight=rojo?'700':'';
-$('#n6').style.display=pagado?'block':'none'}
+set('#nb3',bs(t));set('#n4',a.err?'—':bs(ad));set('#n5',txt);
+var c=$('#ncnt');if(c)c.textContent=NP.items.length+(NP.items.length===1?' corte':' cortes');
+var r=$('#n5r');if(r){r.classList.toggle('red',rojo);r.classList.toggle('okk',pagado)}}
 
 function sCortes(){
 var g={};S.designs.forEach(function(d){g[d.n]=[]});
@@ -361,7 +428,7 @@ var h=hero({title:'Cortes por diseño',sub:'Marca cada corte cuando lo termines'
 var b='<div class="sheet"><div class="cn" style="padding-top:8px">',any=0;
 Object.keys(g).forEach(function(n){var r=g[n];if(!r.length)return;any=1;
 var pe=r.filter(function(x){return !x.i.h}),c2=pe.reduce(function(a,x){return a+x.i.cm},0);
-b+='<div class="sec"><div class="l" style="margin-bottom:6px"><span style="display:flex;align-items:center;gap:12px">'+sw(n)+'<b style="font-size:17px">'+esc(n)+'</b></span><span class="mut">'+pe.length+(pe.length===1?' corte':' cortes')+', '+m2(c2)+' m</span></div>';
+b+='<div class="sec"><div class="l" style="margin-bottom:6px"><b class="serif" style="font-size:21px">'+esc(n)+'</b><span class="mut">'+pe.length+(pe.length===1?' corte':' cortes')+', '+m2(c2)+' m</span></div>';
 r.forEach(function(x){b+='<label class="ck'+(x.i.h?' st-t':'')+'" style="padding:8px 0;min-height:52px"><input type="checkbox" data-a="cx" data-v="'+x.o.n+','+x.j+'"'+(x.i.h?' checked':'')+'><span><b class="serif" style="font-size:20px">'+x.i.cm+' cm</b> <span class="mut">'+esc(nom(x.o))+', pedido '+x.o.n+'</span>'+(x.i.df?'<br><span style="font-size:13px;font-weight:700;color:var(--brass-text)">Forro '+esc(x.i.c.toLowerCase())+'</span>':'')+'</span></label>'});
 b+='</div>'});
 return h+b+(any?'':'<div class="empty">No hay cortes pendientes</div>')+(any&&own()?'<button class="btn o2" style="margin-top:14px" data-a="pdfcor">Descargar PDF de cortes pendientes</button>':'')+'</div></div>'}
@@ -416,11 +483,15 @@ b+=list;
 if(ow)b+='<button class="btn o2" style="margin-top:14px" data-a="pdfhist">Descargar PDF del periodo</button>';
 return h+b+'</div></div>'}
 
-function sMas(){
-var items=[['saldos','Saldos pendientes','Cuánto debe cada cliente'],['clave','Cambiar contraseña','Cambia tu clave de ingreso']];if(own()){items.push(['ajustes','Ajustes','Precios de envío, doble forro y diseños']);items.push(['accesos','Accesos','Cuenta y horario de la vendedora'])}
-return hero({title:'Más'})+'<div class="sheet"><div class="cn narrow" style="max-width:640px"><div style="padding-top:8px">'+items.map(function(i){return '<button class="menu" data-a="go" data-v="'+i[0]+'"><span class="menu-t"><b>'+i[1]+'</b><small>'+i[2]+'</small></span>'+IC.chev+'</button>'}).join('')+'<button class="menu" data-a="sync"><span class="menu-t"><b>Actualizar datos ahora</b><small>Trae lo último de la nube</small></span>'+IC.chev+'</button></div>'+
-'<div class="box" style="margin-top:22px"><b>Varios aparatos</b><p class="mut" style="margin:6px 0 0">Los datos se guardan en la nube. Lo que registres en el celular aparece en la laptop y viceversa; se actualizan solos cada pocos segundos.</p></div>'+
-'<button class="btn o2 quiet" style="margin-top:6px" data-a="logout">'+IC.out+' Cerrar sesión</button></div></div>'}
+function masTabs(cur){
+var t=[['saldos','Saldos']];if(own()){t.push(['ajustes','Ajustes']);t.push(['accesos','Accesos'])}t.push(['cuenta','Cuenta']);
+return '<div class="tabs mtabs" role="group" aria-label="Más opciones">'+t.map(function(x){return '<button class="tab'+(cur===x[0]?' on':'')+'" data-a="go" data-v="'+x[0]+'"'+(cur===x[0]?' aria-current="page"':'')+'>'+x[1]+'</button>'}).join('')+'</div>'}
+function sCuenta(){
+return hero({title:'Más'})+'<div class="sheet"><div class="cn mid">'+masTabs('cuenta')+
+'<div class="sec"><h2 class="serif h2" style="margin-bottom:12px">Cambiar contraseña</h2><div class="fld"><label class="lb" for="k1">Contraseña nueva</label><input id="k1" class="fi" type="password" autocomplete="new-password"></div><div class="fld"><label class="lb" for="k2">Repite la contraseña</label><input id="k2" class="fi" type="password" autocomplete="new-password"></div><div id="kerr" class="err"></div><button class="btn" data-a="saveclave">Guardar contraseña</button></div>'+
+'<div class="sec"><button class="menu" data-a="sync"><span class="menu-t"><b>Actualizar datos ahora</b><small>Trae lo último de la nube</small></span>'+IC.chev+'</button>'+
+'<div class="box" style="margin-top:12px"><b>Varios aparatos</b><p class="mut" style="margin:6px 0 0">Los datos se guardan en la nube. Lo que registres en el celular aparece en la laptop y viceversa; se actualizan solos cada pocos segundos.</p></div>'+
+'<button class="btn o2 quiet" style="margin-top:6px" data-a="logout">'+IC.out+' Cerrar sesión</button></div></div></div>'}
 
 /* Saldos por cliente: se agrupan por celular (normalizado); el título es el nombre si alguno de sus pedidos lo tiene */
 function saldosData(){
@@ -429,20 +500,18 @@ return {g:g,tt:tt}}
 function sSaldos(){
 var D=saldosData(),g=D.g,tt=D.tt;
 var b=Object.keys(g).sort(function(a,c){return g[c].s-g[a].s}).map(function(k){var c=g[k];return '<div class="hrow"><div class="l"><div><b>'+esc(c.nom||c.cel)+'</b><div class="mut">'+(c.nom?esc(c.cel)+', ':'')+'pedidos '+c.n.join(', ')+'</div></div><span class="debt" style="font-size:16px">'+bs(c.s)+'</span></div></div>'}).join('');
-return hero({back:'mas',kick:'Total por cobrar',big:bs(tt),debt:tt>0})+'<div class="sheet"><div class="cn" style="padding-top:12px">'+(b||'<div class="empty">Nadie tiene saldo pendiente</div>')+(own()&&b?'<button class="btn o2" style="margin-top:12px" data-a="pdfsal">Descargar PDF de saldos</button>':'')+'</div></div>'}
-
-function sClave(){return hero({back:'mas',title:'Cambiar contraseña'})+'<div class="sheet"><div class="cn narrow"><div class="fld" style="margin-top:18px"><label class="lb" for="k1">Contraseña nueva</label><input id="k1" class="fi" type="password" autocomplete="new-password"></div><div class="fld"><label class="lb" for="k2">Repite la contraseña</label><input id="k2" class="fi" type="password" autocomplete="new-password"></div><div id="kerr" class="err"></div><button class="btn" data-a="saveclave">Guardar contraseña</button></div></div>'}
+return hero({kick:'Total por cobrar',big:bs(tt),debt:tt>0})+'<div class="sheet"><div class="cn mid">'+masTabs('saldos')+(b||'<div class="empty">Nadie tiene saldo pendiente</div>')+(own()&&b?'<button class="btn o2" style="margin-top:12px" data-a="pdfsal">Descargar PDF de saldos</button>':'')+'</div></div>'}
 
 function sAjustes(){
-var rows=S.designs.map(function(d){return '<div class="l" style="padding:8px 0;border-bottom:1px solid var(--line2)"><span style="display:flex;align-items:center;gap:12px">'+sw(d.n,32)+esc(d.n)+'</span><button class="btn o2 sm" style="width:auto;height:38px;margin:0" data-a="ocd" data-v="'+d.id+'">Ocultar</button></div>'}).join('');
-return hero({back:'mas',title:'Ajustes'})+'<div class="sheet"><div class="cn narrow" style="max-width:640px"><div class="sec"><div class="g2"><div><label class="lb" for="adf">Recargo doble forro (Bs)</label><input id="adf" class="fi" inputmode="numeric" data-a="aj" data-v="DF" value="'+S.DF+'"></div><div><label class="lb" for="atr">Envío trópico (Bs)</label><input id="atr" class="fi" inputmode="numeric" data-a="aj" data-v="TR" value="'+S.TR+'"></div></div><p class="mut">Los cambios se aplican solo a los pedidos nuevos.</p></div>'+
-'<div class="sec"><h2 class="serif h2" style="margin-bottom:8px">Diseños</h2>'+(rows||'<p class="mut">Todavía no hay diseños. Agrega el primero abajo.</p>')+'<div class="fld" style="margin-top:14px"><label class="lb" for="dnew">Diseño nuevo</label><input id="dnew" class="fi" placeholder="Nombre del diseño"></div><div class="g2"><div><label class="lb" for="dpat">Muestra</label><select id="dpat" class="fi"><option value="liso">Liso</option><option value="floral">Floral</option><option value="rayas">Rayas</option><option value="lunares">Lunares</option></select></div><div><label class="lb" for="dcol">Color</label><input id="dcol" class="fi" type="color" value="#B01C75" style="padding:4px"></div></div><div id="derr" class="err"></div><button class="btn" data-a="addd">Agregar diseño</button></div></div></div>'}
+var rows=S.designs.map(function(d){return '<div class="l" style="padding:8px 0;border-bottom:1px solid var(--line2)"><span>'+esc(d.n)+'</span><button class="btn o2 sm" style="width:auto;height:44px;margin:0" data-a="ocd" data-v="'+d.id+'">Ocultar</button></div>'}).join('');
+return hero({title:'Más'})+'<div class="sheet"><div class="cn mid">'+masTabs('ajustes')+'<div class="sec"><div class="g2"><div><label class="lb" for="adf">Recargo doble forro (Bs)</label><input id="adf" class="fi" inputmode="numeric" data-a="aj" data-v="DF" value="'+S.DF+'"></div><div><label class="lb" for="atr">Envío trópico (Bs)</label><input id="atr" class="fi" inputmode="numeric" data-a="aj" data-v="TR" value="'+S.TR+'"></div></div><p class="mut">Los cambios se aplican solo a los pedidos nuevos.</p></div>'+
+'<div class="sec"><h2 class="serif h2" style="margin-bottom:8px">Diseños</h2>'+(rows||'<p class="mut">Todavía no hay diseños. Agrega el primero abajo.</p>')+'<div class="fld" style="margin-top:14px"><label class="lb" for="dnew">Diseño nuevo</label><input id="dnew" class="fi" placeholder="Nombre del diseño"></div><div id="derr" class="err"></div><button class="btn" data-a="addd">Agregar diseño</button></div></div></div>'}
 
 function sAccesos(){
 var c=R.cta||{creada:false,email:'',activo:true};
 var hr=[1,2,3,4,5,6,0].map(function(d){var x=S.horario[d]||{on:0,a:'08:00',b:'19:00'};return '<div style="display:flex;align-items:center;gap:8px;min-height:50px"><input type="checkbox" id="ho'+d+'"'+(x.on?' checked':'')+' style="width:22px;height:22px;accent-color:var(--btn);flex:none" aria-label="'+DAYN[d]+' permitido"><label for="ho'+d+'" style="width:50px;font-weight:700">'+DAYS3[d].replace(/^./,function(z){return z.toUpperCase()})+'</label><input type="time" class="fi" style="height:44px;flex:1;min-width:0;padding:0 8px" id="ha'+d+'" value="'+x.a+'" aria-label="'+DAYN[d]+' desde"><input type="time" class="fi" style="height:44px;flex:1;min-width:0;padding:0 8px" id="hb'+d+'" value="'+x.b+'" aria-label="'+DAYN[d]+' hasta"></div>'}).join('');
 var ac=S.acc.map(function(a){var bad=a.tipo!=='Ingreso';return '<div class="hrow" style="'+(bad?'border-color:var(--bad);background:color-mix(in srgb,var(--bad) 12%,var(--surface))':'')+'"><div class="l"><div><b>'+a.u+'</b><div class="mut">'+a.tipo+'</div></div><span class="mut">'+lab(a.d)+' '+a.h+'</span></div></div>'}).join('');
-return hero({back:'mas',title:'Accesos'})+'<div class="sheet"><div class="cn narrow" style="max-width:640px">'+
+return hero({title:'Más'})+'<div class="sheet"><div class="cn mid">'+masTabs('accesos')+
 '<div class="sec"><div class="l" style="margin-bottom:12px"><h2 class="serif h2">Cuenta de la vendedora</h2><span class="chip '+(c.creada?'c-ok':'c-done')+'">'+(c.creada?'Cuenta creada':'Sin cuenta')+'</span></div>'+
 '<div class="fld"><label class="lb" for="ce">Correo</label><input id="ce" class="fi" type="email" value="'+esc(c.email)+'" placeholder="vendedora@correo.com"></div>'+
 '<div class="fld"><label class="lb" for="cc">Contraseña nueva</label><div style="display:flex;gap:8px"><input id="cc" class="fi" type="text" autocomplete="off" placeholder="Mínimo 8 caracteres" style="flex:1;min-width:0"><button class="btn o sm" style="width:auto;margin:0;height:50px" data-a="gen">Generar</button></div><p class="mut" style="margin:6px 0 0">Anótala y entrégasela en persona: después de guardar no se vuelve a mostrar. Déjala vacía para no cambiarla.</p></div>'+
@@ -451,24 +520,34 @@ return hero({back:'mas',title:'Accesos'})+'<div class="sheet"><div class="cn nar
 '<div class="sec"><h2 class="serif h2" style="margin-bottom:10px">Historial de accesos</h2>'+(ac||'<p class="mut">Todavía no hay accesos registrados.</p>')+'</div></div></div>'}
 
 function navHtml(){
-var cur=R.scr;if(cur==='detalle'||cur==='editar')cur='pedidos';if(['saldos','clave','ajustes','accesos'].indexOf(cur)>=0)cur='mas';
+var cur=R.scr;if(cur==='editar')cur='pedidos';if(['saldos','ajustes','accesos','cuenta'].indexOf(cur)>=0)cur='mas';
 var it=[['pedidos','Pedidos',IC.ped],['nuevo','Nuevo',IC.nue],['cortes','Cortes',IC.cor],['historial','Historial',IC.his],['mas','Más',IC.mas]];
-return '<div class="navlogo"><span class="mono">JY</span><span class="serif" style="font-size:25px">Telas JY</span></div>'+it.map(function(i){return '<button data-a="go" data-v="'+i[0]+'" class="'+(cur===i[0]?'on':'')+'"'+(cur===i[0]?' aria-current="page"':'')+'>'+i[2]+'<span>'+i[1]+'</span></button>'}).join('')}
+return '<div class="navlogo"><span class="mono">JY</span><span class="serif" style="font-size:22px">Telas JY</span></div>'+it.map(function(i){return '<button data-a="go" data-v="'+i[0]+'" class="'+(cur===i[0]?'on':'')+'"'+(cur===i[0]?' aria-current="page"':'')+'>'+i[2]+'<span>'+i[1]+'</span></button>'}).join('')+
+'<div class="navright"><span class="rolechip">'+(own()?'Dueño':'Vendedora')+'</span><button class="ib lo" data-a="logout" aria-label="Cerrar sesión">'+IC.out+'<span>Cerrar sesión</span></button></div>'}
 
 function draw(){
 if(!R.role&&R.scr!=='login'&&R.scr!=='fuera')R.scr='login';
-if(!own()&&(R.scr==='ajustes'||R.scr==='accesos'))R.scr='mas';
+if(R.scr==='mas')R.scr='saldos';
+if(R.scr==='clave')R.scr='cuenta';
+if(!own()&&(R.scr==='ajustes'||R.scr==='accesos'))R.scr='saldos';
 var nav=$('#nav');
 if(R.scr==='login'||R.scr==='fuera'){nav.style.display='none'}else{nav.style.display='';nav.innerHTML=navHtml()}
-var fn={login:sLogin,fuera:sFuera,pedidos:sPed,detalle:sDet,nuevo:sNuevo,cortes:sCortes,historial:sHist,mas:sMas,saldos:sSaldos,clave:sClave,ajustes:sAjustes,accesos:sAccesos,editar:sEditar}[R.scr];
+var fn={login:sLogin,fuera:sFuera,pedidos:sPed,nuevo:sNuevo,cortes:sCortes,historial:sHist,saldos:sSaldos,cuenta:sCuenta,ajustes:sAjustes,accesos:sAccesos,editar:sEditar}[R.scr];
 var av='';
 if(R.role==='vend'&&R.est&&R.est.segundos_restantes!=null&&R.est.segundos_restantes<=600){var mn=Math.max(1,Math.ceil(R.est.segundos_restantes/60));av='<div class="aviso" role="alert">Tu horario termina en '+mn+(mn===1?' minuto':' minutos')+'. Termina lo que estás haciendo.</div>'}
 var ap=$('#app');ap.dataset.scr=R.scr;ap.classList.toggle('enter',draw.p!==undefined&&draw.p!==R.scr);draw.p=R.scr;
 ap.innerHTML=av+fn();
+ap.dataset.scr=R.scr;
 if(R.scr==='pedidos')drawPedList();
 if(R.scr==='nuevo'||R.scr==='editar')rn();
-}
-function go(s){if(NP&&NP.edit)NP=null;S.designs=S.designs.filter(function(d){return !d.extra});R.scr=s;R.envdirty=0;if(s==='nuevo')resetNP();draw();window.scrollTo(0,0);if(s==='nuevo'){var c=$('#cel');if(c)c.focus({preventScroll:true})}}
+drawPanel()}
+function go(s){
+if(NP&&NP.edit)NP=null;
+S.designs=S.designs.filter(function(d){return !d.extra});
+if(s==='mas')s='saldos';if(s==='clave')s='cuenta';
+if(R.panel)closePanel(true);
+R.scr=s;R.envdirty=0;if(s==='nuevo')resetNP();draw();window.scrollTo(0,0);
+if(s==='nuevo'){var c=$('#cel');if(c)c.focus({preventScroll:true})}}
 
 /* ---------- PDF y WhatsApp ---------- */
 function pdf(titulo,filas,archivo){
@@ -539,9 +618,12 @@ var r=await sb.auth.signInWithPassword({email:em,password:pw});
 busy(0);
 if(r.error){er.textContent=/banned/i.test(r.error.message)?'Tu acceso está desactivado':(/invalid/i.test(r.error.message)?'Correo o contraseña incorrectos':r.error.message);return}
 await abrirSesion(true)},
-logout:async function(){clearInterval(tim);await sb.auth.signOut();R.role=null;R.est=null;S.orders=[];S.retiros=[];R.scr='login';draw();window.scrollTo(0,0)},
+logout:async function(){clearInterval(tim);await sb.auth.signOut();R.role=null;R.est=null;S.orders=[];S.retiros=[];R.panel=false;R.scr='login';draw();window.scrollTo(0,0)},
 sync:function(){recargar().then(function(){toast('Datos actualizados')})},
-open:function(e){R.id=+e.dataset.v;R.pm='Efectivo';R.scr='detalle';R.envdirty=0;draw();window.scrollTo(0,0)},
+open:function(e){R.id=+e.dataset.v;R.pm='Efectivo';R.envdirty=0;R.panel=true;R.scr='pedidos';drawPedList();drawPanel()},
+pclose:function(){closePanel()},
+backdet:function(){NP=null;R.scr='pedidos';R.panel=true;draw();window.scrollTo(0,0)},
+gtog:function(e){R.plg[e.dataset.v]=!R.plg[e.dataset.v];drawPedList()},
 saveenv:async function(){
 var o=byN(R.id);if(!o||!o.env)return;
 var nm=$('#env_nom').value.trim(),ce=$('#env_cel').value.trim(),ci=$('#env_ciu').value.trim(),tr=$('#env_tro').checked;
@@ -559,7 +641,7 @@ if(ef+qr>sal(o)){er.textContent='El monto supera el saldo ('+bs(sal(o))+')';retu
 var r=await run(function(){return sb.from('pagos').insert({pedido_id:o.id,efectivo:ef,qr:qr})},'Pago registrado');
 if(r)await recargar()},
 anu:function(e){var pid=byN(R.id).pg[+e.dataset.v].id;ask({title:'Anular pago',text:'El pago queda tachado en el historial y deja de sumar.',input:'Motivo',ok:'Anular pago',fn:async function(v){var r=await run(function(){return sb.from('pagos').update({anulado:true,motivo_anulacion:v}).eq('id',pid)},'Pago anulado');if(r)await recargar()}})},
-listo:async function(){var o=byN(R.id);var r=await run(function(){return sb.from('pedidos').update({estado:'listo'}).eq('id',o.id)},'Pedido marcado como listo');if(r)await recargar()},
+listo:async function(){var o=byN(R.id);var r=await run(function(){return sb.from('pedidos').update({estado:'listo'}).eq('id',o.id)},'Pedido '+o.n+' pasó a Listos');if(r)await recargar()},
 addcut:function(){NP.items.push({d:0,cm:'',p:'',df:0,c:''});rn();var q=$('#c'+(NP.items.length-1));if(q)q.focus()},
 delcut:function(e){if(NP.items.length>1){NP.items.splice(+e.dataset.v,1);rn()}else $('#nerr').textContent='El pedido necesita al menos un corte'},
 nent:function(e){NP.ent=e.dataset.v;draw()},
@@ -575,7 +657,7 @@ hv:function(e){R.hv=e.dataset.v;draw()},
 hp:function(e){hset(e.dataset.v);draw()},
 hm:function(e){R.hm=e.dataset.v;draw()},
 addd:async function(){var n=$('#dnew').value.trim(),er=$('#derr');if(!n){er.textContent='Escribe el nombre del diseño';return}
-var r=await run(function(){return sb.from('disenos').insert({nombre:n,patron:$('#dpat').value,color:$('#dcol').value})});
+var r=await run(function(){return sb.from('disenos').insert({nombre:n})});
 if(!r){return}
 await recargar();toast('Diseño agregado')},
 ocd:function(e){var id=+e.dataset.v;ask({title:'¿Ocultar este diseño?',text:'Ya no aparecerá en la lista de nuevos pedidos. Los pedidos anteriores no cambian.',ok:'Ocultar',fn:async function(){var r=await run(function(){return sb.from('disenos').update({activo:false}).eq('id',id)},'Diseño oculto');if(r)await recargar()}})},
@@ -598,7 +680,7 @@ er.textContent='';
 var r=await run(function(){return sb.rpc('guardar_horarios',{p:arr})},'Horario guardado');
 if(r){await cargarAccesos();draw()}},
 saveclave:async function(){var a=$('#k1').value,b=$('#k2').value,er=$('#kerr');if(a.length<8){er.textContent='La contraseña necesita al menos 8 caracteres';return}if(a!==b){er.textContent='Las contraseñas no coinciden';return}
-var r=await run(function(){return sb.auth.updateUser({password:a})},'Contraseña actualizada');if(r)go('mas')},
+var r=await run(function(){return sb.auth.updateUser({password:a})},'Contraseña actualizada');if(r)go('cuenta')},
 pdfped:function(){var o=byN(R.id);if(o)pdfPedido(o)},
 edit:function(){var o=byN(R.id);if(!o||!own()||o.es==='Cancelado')return;
 S.designs=S.designs.filter(function(d){return !d.extra});
@@ -606,7 +688,7 @@ var its=o.it.map(function(i){var k=-1;for(var j=0;j<S.designs.length;j++){if(S.d
 if(k<0){S.designs.push({id:-1,n:i.d,pat:'liso',col:'#9AA0B0',extra:1});k=S.designs.length-1}
 return {id:i.id,d:k,cm:String(i.cm),p:String(i.p),df:i.df,c:i.c,rec:i.df?i.rec:null}});
 NP={edit:1,items:its,ent:o.env?'envio':'retiro',en:o.env?o.env.nom:'',ec:o.env?o.env.cel:'',ci:o.env?o.env.ciu:'',tro:o.env&&o.env.tro?1:0};
-R.scr='editar';draw();window.scrollTo(0,0)},
+closePanel(true);R.scr='editar';draw();window.scrollTo(0,0)},
 saveedit:async function(){
 var o=byN(R.id),er=$('#nerr');if(!o||!NP||!NP.edit||!own())return;
 for(var k=0;k<NP.items.length;k++){var i=NP.items[k];
@@ -622,14 +704,14 @@ var payload={id:o.id,entrega:NP.ent,envio_nombre:NP.ent==='envio'?NP.en.trim():n
 items:NP.items.map(function(i){return {id:i.id||null,diseno:S.designs[i.d].n,cm:pn(i.cm),precio_metro:pn(i.p),doble_forro:!!i.df,color_forro:String(i.c||'').trim()}})};
 var r=await run(function(){return sb.rpc('editar_pedido',{p:payload})},'Pedido actualizado');
 if(!r)return;
-NP=null;R.scr='detalle';await recargar();window.scrollTo(0,0)},
+NP=null;R.scr='pedidos';R.panel=true;await recargar();window.scrollTo(0,0)},
 delp:function(){var o=byN(R.id);if(!o||!own())return;
 var pgs=o.pg.reduce(function(a,p){return a+(p.x?0:p.ef+p.qr)},0);
 ask({title:'¿Eliminar el pedido '+o.n+'?',text:o.pg.length?'Tiene '+o.pg.length+(o.pg.length===1?' pago registrado':' pagos registrados')+' ('+bs(pgs)+'). Se borra todo: el pedido, sus cortes y sus pagos. No se puede deshacer.':'Se borra por completo, con sus cortes. No se puede deshacer.',ok:'Eliminar pedido',danger:1,fn:async function(){
 var r=await run(function(){return sb.from('pedidos').delete().eq('id',o.id).select('id')});
 if(!r)return;
 if(!r.data||!r.data.length){toast('No se pudo eliminar el pedido');return}
-toast('Pedido '+o.n+' eliminado');R.scr='pedidos';R.id=null;await recargar();window.scrollTo(0,0)}})},
+toast('Pedido '+o.n+' eliminado');closePanel(true);R.scr='pedidos';R.id=null;await recargar();window.scrollTo(0,0)}})},
 pdfhist:function(){pdfHist()},
 pdfsal:function(){pdfSaldos()},
 pdfcor:function(){pdfCortes()},
@@ -658,7 +740,7 @@ var r=await run(function(){return sb.rpc('crear_pedido',{p:payload})});
 if(!r)return;
 var num=r.data;NP=null;
 busy(1);try{await cargar()}catch(e){}busy(0);
-R.id=num;R.pm='Efectivo';R.scr='detalle';draw();window.scrollTo(0,0);toast('Pedido '+num+' guardado')}
+R.id=num;R.pm='Efectivo';R.scr='pedidos';R.panel=true;draw();window.scrollTo(0,0);toast('Pedido '+num+' guardado')}
 
 document.addEventListener('click',function(ev){
 var e=ev.target.closest('[data-a]');if(!e)return;
@@ -673,8 +755,9 @@ if(a==='cut'){o=byN(R.id);var it=o.it[+e.dataset.v];r=await run(function(){retur
 else if(a==='cx'){var p=e.dataset.v.split(',');o=byN(+p[0]);var it2=o.it[+p[1]];r=await run(function(){return sb.from('pedido_items').update({hecho:e.checked}).eq('id',it2.id)});await recargar()}
 else if(a==='ver'){o=byN(R.id);var pg=o.pg[+e.dataset.v];r=await run(function(){return sb.from('pagos').update({verificado:e.checked}).eq('id',pg.id)});await recargar()}
 else if(a==='es'){o=byN(R.id);var v=e.value;
-if(v==='Cancelado'){e.value=o.es;ask({title:'¿Cancelar este pedido?',text:'El pedido deja de contar en las ventas y en los saldos.',ok:'Cancelar pedido',fn:async function(){var r2=await run(function(){return sb.from('pedidos').update({estado:'cancelado'}).eq('id',o.id)},'Pedido cancelado');if(r2)await recargar()}});return}
-r=await run(function(){return sb.from('pedidos').update({estado:ESC[v],fecha_entregado:v==='Entregado'?today():null}).eq('id',o.id)},'Estado actualizado');await recargar()}
+if(v==='Cancelado'){e.value=o.es;ask({title:'¿Cancelar este pedido?',text:'El pedido deja de contar en las ventas y en los saldos.',ok:'Cancelar pedido',fn:async function(){var r2=await run(function(){return sb.from('pedidos').update({estado:'cancelado'}).eq('id',o.id)},'Pedido '+o.n+' pasó a Cancelados');if(r2)await recargar()}});return}
+r=await run(function(){return sb.from('pedidos').update({estado:ESC[v],fecha_entregado:v==='Entregado'?today():null}).eq('id',o.id)},'Pedido '+o.n+' pasó a '+GN[v]);await recargar()}
+else if(a==='ord'){R.ord=e.value;drawPedList()}
 else if(a==='nd'){NP.items[+e.dataset.k].d=+e.value;rn()}
 else if(a==='ndf'){NP.items[+e.dataset.k].df=e.checked?1:0;rn()}
 else if(a==='ntro'){NP.tro=e.checked?1:0;ntot()}
@@ -692,9 +775,20 @@ if(e.dataset.ni!==undefined){var it=NP.items[+e.dataset.ni],f=e.dataset.f;it[f]=
 if(f==='cm'||f==='p'){var k=e.dataset.ni,raw=nraw(it),ee=$('#e'+(f==='cm'?'cm':'pr')+k);if(ee)ee.textContent=fe(e.value);$('#ns'+k).textContent=bs(nsub(it));$('#nr'+k).innerHTML=raw!==Math.round(raw)?'<span style="font-size:12px;font-weight:400;color:var(--muted)">'+raw.toFixed(2).replace('.',',')+' redondeado </span>':'';ntot()}}
 });
 document.addEventListener('keydown',function(ev){
-if(ev.key==='Escape'&&ask.o)closeAsk();
+if(ev.key==='Escape'){if(ask.o)closeAsk();else if(R.panel)closePanel()}
+if(ev.key==='Tab'&&R.panel&&!ask.o){var P=$('#panel'),fo=[].filter.call(P.querySelectorAll('button,input,select,textarea'),function(x){return !x.disabled&&x.offsetParent!==null});
+if(fo.length){var f0=fo[0],f1=fo[fo.length-1],ad=document.activeElement,dentro=P.contains(ad);
+if(ev.shiftKey&&(ad===f0||!dentro)){ev.preventDefault();f1.focus()}else if(!ev.shiftKey&&(ad===f1||!dentro)){ev.preventDefault();f0.focus()}}}
+if((ev.key==='Enter'||ev.key===' ')&&ev.target.classList&&ev.target.classList.contains('trow')){ev.preventDefault();A.open(ev.target)}
 if(ev.key==='Enter'&&R.scr==='login'&&(ev.target.id==='lp'||ev.target.id==='lc'))A.entrar()});
 document.addEventListener('visibilitychange',function(){if(!document.hidden&&R.role)vigilar()});
+
+/* En celular, mientras se escribe se esconde la barra de abajo para que el campo y el botón principal queden a la vista */
+var TXT='input:not([type=checkbox]):not([type=radio]),textarea';
+document.addEventListener('focusin',function(ev){var t=ev.target;if(window.innerWidth<900&&t.matches&&t.matches(TXT))document.body.classList.add('kb')});
+document.addEventListener('focusout',function(){setTimeout(function(){var t=document.activeElement;if(!(t&&t.matches&&t.matches(TXT)))document.body.classList.remove('kb')},60)});
+
+if(MQ.addEventListener)MQ.addEventListener('change',function(){if(R.scr==='pedidos')drawPedList()});
 
 sb.auth.onAuthStateChange(function(ev){if(ev==='SIGNED_OUT'&&R.role){R.role=null;R.scr='login';draw()}});
 draw();
